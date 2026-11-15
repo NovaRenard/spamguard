@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>SpamGuard: отчёт</title>
+<script src="https://telegram.org/js/telegram-web-app.js" async></script>
+<style>
+  :root {
+    --bg: #0e1621; --card: #17212b; --card2: #1e2c3a; --line: #2b3b4c; --text: #e8eef5; --muted: #93a3b7;
+    --accent: #2aabee; --green: #4cd964; --amber: #ffb020; --red: #ff6b6b; --violet: #a78bfa; --shadow: rgba(0,0,0,.25);
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: #f3f6fb; --card: #fff; --card2: #eef3f9; --line: #d3dde9; --text: #15202b; --muted: #5a6b7f;
+      --accent: #1b8fd0; --green: #1f9d3a; --amber: #b87400; --red: #d64545; --violet: #6d4fd6; --shadow: rgba(30,50,80,.08); }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; padding-bottom: env(safe-area-inset-bottom); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 14px 16px 40px; }
+  .top { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 6px 0 14px; }
+  .brand { font-size: 20px; display: flex; align-items: baseline; gap: 8px; }
+  .brand small { color: var(--muted); font-size: 13px; }
+  .ctrl { display: flex; flex-wrap: wrap; gap: 10px; }
+  .seg { display: inline-flex; background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: 3px; }
+  .seg button { font: inherit; font-size: 14px; color: var(--muted); background: none; border: 0; border-radius: 999px; padding: 5px 14px; cursor: pointer; }
+  .seg button[aria-selected="true"], .seg button.on { background: var(--accent); color: #fff; font-weight: 600; }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .banner { background: var(--card2); border: 1px dashed var(--violet); color: var(--text); border-radius: 12px; padding: 8px 14px; margin-bottom: 14px; font-size: 14px; }
+  .muted { color: var(--muted); }
+  h2 { font-size: 17px; margin: 0 0 10px; }
+  h2 small { font-weight: 400; color: var(--muted); font-size: 13px; margin-left: 6px; }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .kpi { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; box-shadow: 0 6px 20px var(--shadow); }
+  .kpi .l { color: var(--muted); font-size: 13px; }
+  .kpi .v { font-size: 30px; font-weight: 700; line-height: 1.15; margin: 2px 0; font-variant-numeric: tabular-nums; }
+  .kpi .s { font-size: 12.5px; color: var(--muted); }
+  .up { color: var(--amber); } .down { color: var(--green); } .flat { color: var(--muted); }
+
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; margin-bottom: 14px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; box-shadow: 0 6px 20px var(--shadow); min-width: 0; }
+  .card.wide { grid-column: 1 / -1; }
+  .chart { position: relative; }
+  .chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+  .tip { position: absolute; pointer-events: none; background: var(--card2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font-size: 12.5px; white-space: nowrap; z-index: 5; box-shadow: 0 6px 18px var(--shadow); display: none; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+  .axis { fill: var(--muted); font-size: 11px; } .grid-l { stroke: var(--line); stroke-width: 1; }
+
+  .rows { display: grid; gap: 7px; }
+  .row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto; gap: 10px; align-items: center; font-size: 14px; }
+  .row .n { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .row .n .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .row .n .chip { margin-left: 0; flex: none; }
+  .bar { height: 8px; background: var(--card2); border-radius: 6px; overflow: hidden; } .bar > i { display: block; height: 100%; border-radius: 6px; }
+  .num { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 2.2ch; text-align: right; }
+  .chip { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 1px 8px; border-radius: 999px; border: 1.5px solid; margin-left: 6px; }
+  .c-gambling { color: var(--red); border-color: var(--red); } .c-scam { color: var(--amber); border-color: var(--amber); } .c-spam { color: var(--violet); border-color: var(--violet); }
+  .c-on { color: var(--green); border-color: var(--green); } .c-off { color: var(--muted); border-color: var(--line); }
+  .status { display: flex; flex-wrap: wrap; gap: 8px; }
+  .status span { font-size: 13px; padding: 4px 12px; border-radius: 999px; border: 1.5px solid; }
+  .summary { background: var(--card2); border-radius: 12px; padding: 12px 14px; line-height: 1.6; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; } th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
+  tr.me td { background: var(--card2); font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  .empty, .err { text-align: center; padding: 60px 16px; color: var(--muted); }
+  .err b, .empty b { color: var(--text); font-size: 18px; display: block; margin-bottom: 6px; }
+  footer { color: var(--muted); font-size: 12.5px; margin-top: 18px; text-align: center; }
+  @media (max-width: 600px) { .grid2 { grid-template-columns: 1fr; } .kpi .v { font-size: 26px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div class="brand">🛡 <b>SpamGuard</b> <small id="stamp"></small></div>
+    <div class="ctrl"><div class="seg" id="tabs" role="tablist"></div><div class="seg" id="period" role="group" aria-label="Период"></div></div>
+  </div>
+  <div id="banner"></div>
+  <main id="app"><div class="empty">Загружаю…</div></main>
+  <footer>Здесь только цифры. Тексты сообщений, имена, телефоны и ID собеседников на сайт не передаются; пользователи обозначены псевдонимом.</footer>
+</div>
+
+<script>
+'use strict';
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const fmt = (n) => (Math.round(n * 10) / 10).toLocaleString('ru-RU');
+const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 : 0);
+const C = () => { const s = getComputedStyle(document.documentElement); const g = (k) => s.getPropertyValue(k).trim(); return { accent: g('--accent'), green: g('--green'), amber: g('--amber'), red: g('--red'), violet: g('--violet'), muted: g('--muted'), line: g('--line') }; };
+const LABELS = { gambling: ['Казино и ставки', 'red'], scam: ['Мошенничество', 'amber'], spam: ['Спам и реклама', 'violet'] };
+const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const dlabel = (d) => `${+d.slice(8, 10)} ${MONTHS[+d.slice(5, 7) - 1]}`;
+
+const S = { data: null, tab: 'me', period: 30, demo: false };
+
+/* ---------------------------------------------------------------- данные */
+const win = (arr, n) => arr.slice(-n);
+const prevWin = (arr, n) => arr.slice(-2 * n, -n);
+const sum = (arr, f) => arr.reduce((a, d) => a + (d[f] || 0), 0);
+
+function delta(arr, f, n) {
+  if (n >= 90) return '';
+  const prev = prevWin(arr, n);
+  if (prev.length < n) return '';
+  const a = sum(win(arr, n), f), b = sum(prev, f);
+  if (!b && !a) return '<span class="flat">без изменений</span>';
+  if (!b) return `<span class="up">▲ новое (раньше 0)</span>`;
+  const d = Math.round(((a - b) / b) * 100);
+  return d === 0 ? '<span class="flat">без изменений</span>' : `<span class="${d > 0 ? 'up' : 'down'}">${d > 0 ? '▲ +' : '▼ '}${d}%</span> к прошлым ${n} дн.`;
+}
+
+/* ---------------------------------------------------------------- графики (SVG) */
+function tooltipFor(box, show, hide) {
+  const tip = document.createElement('div'); tip.className = 'tip'; box.appendChild(tip);
+  box.addEventListener('pointermove', (e) => {
+    const r = box.getBoundingClientRect(), i = show(e.clientX - r.left, r.width);
+    if (i == null) return hide(tip);
+    tip.style.display = 'block'; tip.innerHTML = i.html;
+    tip.style.left = Math.min(Math.max(4, e.clientX - r.left + 12), r.width - tip.offsetWidth - 4) + 'px'; tip.style.top = '4px';
+  });
+  box.addEventListener('pointerleave', () => hide(tip));
+}
+const hideTip = (t) => { t.style.display = 'none'; };
+
+function niceMax(v) {  // максимум кратен 4 с «круглым» целым шагом, чтобы на оси не было дробей
+  const s0 = Math.max(1, v / 4), p = Math.pow(10, Math.floor(Math.log10(s0)));
+  return [1, 2, 3, 4, 5, 6, 8, 10].map((m) => m * p).find((s) => s >= s0) * 4;
+}
+
+/** series: [{name,color,data[],fill?}]; stacked=true рисует столбики */
+function chart(el, labels, series, { stacked = false, h = 210 } = {}) {
+  const W = Math.max(280, Math.round(el.clientWidth || 640)), H = h, L = 34, R = 8, T = 10, B = 24, n = labels.length;  // ширина = реальная, чтобы подписи не сжимались
+  const totals = labels.map((_, i) => (stacked ? series.reduce((a, s) => a + s.data[i], 0) : Math.max(...series.map((s) => s.data[i]))));
+  const max = niceMax(Math.max(1, ...totals)), cw = (W - L - R) / n, y = (v) => T + (H - T - B) * (1 - v / max);
+  let g = '';
+  for (let k = 0; k <= 4; k++) { const v = (max / 4) * k, yy = y(v); g += `<line class="grid-l" x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}"/><text class="axis" x="${L - 6}" y="${yy + 4}" text-anchor="end">${fmt(v)}</text>`; }
+  const step = Math.max(1, Math.ceil(n / 7));
+  labels.forEach((l, i) => { if (i % step === 0 || i === n - 1) g += `<text class="axis" x="${L + cw * i + cw / 2}" y="${H - 6}" text-anchor="middle">${esc(dlabel(l))}</text>`; });
+  if (stacked) {
+    labels.forEach((_, i) => { let acc = 0; series.forEach((s) => { const v = s.data[i]; if (!v) return; const y1 = y(acc + v), y0 = y(acc); g += `<rect x="${L + cw * i + cw * 0.12}" y="${y1}" width="${cw * 0.76}" height="${Math.max(0, y0 - y1)}" rx="2" fill="${s.color}"/>`; acc += v; }); });
+  } else {
+    series.forEach((s) => {
+      const pts = s.data.map((v, i) => [L + cw * i + cw / 2, y(v)]);
+      const line = pts.map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('');
+      if (s.fill) g += `<path d="${line}L${pts[n - 1][0]},${H - B}L${pts[0][0]},${H - B}Z" fill="${s.color}" opacity=".16"/>`;
+      g += `<path d="${line}" fill="none" stroke="${s.color}" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>`;
+    });
+  }
+  el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="График по дням">${g}<line id="cur" y1="${T}" y2="${H - B}" stroke="${C().muted}" stroke-dasharray="3 3" opacity="0"/></svg>`;
+  el.classList.add('chart');
+  const cur = el.querySelector('#cur');
+  tooltipFor(el, (x, w) => {
+    const i = Math.floor(((x / w) * W - L) / cw); if (i < 0 || i >= n) { cur.setAttribute('opacity', 0); return null; }
+    cur.setAttribute('x1', L + cw * i + cw / 2); cur.setAttribute('x2', L + cw * i + cw / 2); cur.setAttribute('opacity', 0.6);
+    return { html: `<b>${esc(dlabel(labels[i]))}</b>` + series.map((s) => `<div><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${s.color};margin-right:5px"></i>${esc(s.name)}: <b>${fmt(s.data[i])}</b></div>`).join('') };
+  }, (t) => { hideTip(t); cur.setAttribute('opacity', 0); });
+  el.insertAdjacentHTML('afterend', `<div class="legend">${series.map((s) => `<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div>`);
+}
+
+function donut(el, items) {
+  const tot = items.reduce((a, i) => a + i.v, 0);
+  if (!tot) { el.innerHTML = '<div class="muted">Пока нет данных</div>'; return; }
+  const R = 54, r = 34, cx = 70, cy = 70; let a0 = -Math.PI / 2, g = '';
+  items.filter((i) => i.v).forEach((i) => { const a1 = a0 + (i.v / tot) * Math.PI * 2, big = a1 - a0 > Math.PI ? 1 : 0;
+    const p = (a, rad) => `${cx + rad * Math.cos(a)},${cy + rad * Math.sin(a)}`;
+    g += items.filter((x) => x.v).length === 1 ? `<circle cx="${cx}" cy="${cy}" r="${(R + r) / 2}" fill="none" stroke="${i.color}" stroke-width="${R - r}"/>` : `<path d="M${p(a0, R)}A${R},${R} 0 ${big} 1 ${p(a1, R)}L${p(a1, r)}A${r},${r} 0 ${big} 0 ${p(a0, r)}Z" fill="${i.color}"/>`; a0 = a1; });
+  el.innerHTML = `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap"><svg viewBox="0 0 140 140" width="140" height="140" role="img" aria-label="Доли">${g}<text x="70" y="68" text-anchor="middle" font-size="20" font-weight="700" fill="currentColor">${fmt(tot)}</text><text x="70" y="84" text-anchor="middle" class="axis">всего</text></svg>
+    <div class="rows" style="flex:1;min-width:160px">${items.map((i) => `<div class="row" style="grid-template-columns:1fr auto"><span><i style="display:inline-block;width:10px;height:10px;border-radius:3px;background:${i.color};margin-right:7px"></i>${esc(i.name)}</span><span class="num">${fmt(i.v)} <span class="muted" style="font-weight:400">· ${pct(i.v, tot)}%</span></span></div>`).join('')}</div></div>`;
+}
+
+function hbars(el, items, color, empty = 'Пока нет данных') {
+  if (!items.length) { el.innerHTML = `<div class="muted">${empty}</div>`; return; }
+  const max = Math.max(...items.map((i) => i.v));
+  el.innerHTML = `<div class="rows">${items.map((i) => `<div class="row"><span class="n" title="${esc(i.name)}"><span class="t">${esc(i.name)}</span>${i.chip ?`<span class="chip c-${esc(i.chip)}">${esc((LABELS[i.chip] || [i.chip])[0])}</span>` : ''}</span><div class="bar"><i style="width:${(i.v / max) * 100}%;background:${i.color || color}"></i></div><span class="num">${fmt(i.v)}</span></div>`).join('')}</div>`;
+}
+
+/* ---------------------------------------------------------------- блоки страницы */
+const kpi = (l, v, s) => `<div class="kpi"><div class="l">${l}</div><div class="v">${v}</div><div class="s">${s || '&nbsp;'}</div></div>`;
+const card = (title, body, cls = '', sub = '') => `<section class="card ${cls}"><h2>${title}${sub ? `<small>${sub}</small>` : ''}</h2>${body}</section>`;
+
+function summaryText(scope, n, admin, g) {
+  const d = win(scope.daily, n), ch = sum(d, 'checked'), fl = sum(d, 'flagged');
+  if (!ch) return 'За выбранный период проверок ещё не было.';
+  const parts = Object.entries(LABELS).map(([k, [name]]) => [name, sum(d, k)]).filter((x) => x[1]).sort((a, b) => b[1] - a[1]);
+  const fp = sum(d, 'fp'), top = (scope.top[String(n)] || {}).domains || [];
+  let t = `За ${n} дн. проверено <b>${fmt(ch)}</b> сообщений от новых собеседников, помечено <b>${fmt(fl)}</b> (${pct(fl, ch)}%).`;
+  if (parts.length) t += ` Чаще всего: ${parts.map((p) => `${p[0].toLowerCase()} (${fmt(p[1])})`).join(', ')}.`;
+  t += ` Заблокировано <b>${fmt(sum(d, 'blocked'))}</b>, «был бы заблокирован» ${fmt(sum(d, 'would_block'))}, предупреждений ${fmt(sum(d, 'warned'))}.`;
+  if (fl) t += ` Ложных срабатываний: <b>${fmt(fp)}</b> (${pct(fp, fl)}% помеченных).`;
+  if (top.length) t += ` Самый частый опасный домен: <b>${esc(top[0][0])}</b> (${top[0][1]}).`;
+  const kl = sum(d, 'known_link'); if (kl) t += ` Опасные ссылки от знакомых: ${fmt(kl)}.`;
+  if (admin && g) t += ` Пользователей: ${g.accounts.users} (Telegram ${g.accounts.tg}, WhatsApp ${g.accounts.wa}); уникальных помеченных отправителей: ${(top, (g.top[String(n)] || {}).unique_senders || 0)}.`;
+  return t;
+}
+
+function threatBlocks(scope, labels, n) {
+  const d = win(scope.daily, n), c = C();
+  const col = { gambling: c.red, scam: c.amber, spam: c.violet };
+  return { dailyHtml: '', col, d, series: Object.keys(LABELS).map((k) => ({ name: LABELS[k][0], color: col[k], data: d.map((x) => x[k] || 0) })), labels: d.map((x) => x.date), totals: Object.keys(LABELS).map((k) => ({ name: LABELS[k][0], color: col[k], v: sum(d, k) })) };
+}
+
+function reasonsBlock(scope, n) {
+  const t = (scope.top[String(n)] || {}), sig = t.signals || {};
+  return { sig: Object.entries(sig).map(([k, v]) => ({ name: { текст: 'Текст сообщения', профиль: 'Профиль отправителя', ссылка: 'Ссылка' }[k] || k, v })), reasons: (t.reasons || []).map((r) => ({ name: r[0], v: r[1] })), domains: (t.domains || []).map((r) => ({ name: r[0], v: r[1], chip: r[2] })) };
+}
+
+function renderMe() {
+  const D = S.data, me = D.me, n = S.period;
+  if (!me) return `<div class="empty"><b>Для вас пока нет данных</b>Бот отправит их в течение получаса после первых проверок. Откройте отчёт позже.</div>`;
+  const c = C(), d = win(me.daily, n), ch = sum(d, 'checked'), fl = sum(d, 'flagged'), fp = sum(d, 'fp');
+  const k = [
+    kpi('Проверено', fmt(ch), delta(me.daily, 'checked', n)),
+    kpi('Помечено подозрительным', fmt(fl), `${pct(fl, ch)}% от проверенных · ${delta(me.daily, 'flagged', n) || ''}`),
+    kpi('Заблокировано', fmt(sum(d, 'blocked')), `«был бы заблокирован»: ${fmt(sum(d, 'would_block'))}`),
+    kpi('Ложные срабатывания', fmt(fp), fl ? `${pct(fp, fl)}% помеченных` : 'нет помеченных'),
+    kpi('Опасные ссылки от знакомых', fmt(sum(d, 'known_link')), 'вдруг взломали'),
+    kpi('Групп покинуто', fmt(sum(d, 'group_left')), `проверок групп: ${fmt(Object.values(me.groups[String(n)] || {}).reduce((a, b) => a + b, 0))}`),
+  ].join('');
+  const tb = threatBlocks(me, 0, n), rb = reasonsBlock(me, n), g = me.groups[String(n)] || {};
+  const m = me.modes || {}, conn = me.connected || {};
+  const st = (on, t) => `<span class="${on ? 'c-on' : 'c-off'}">${on ? '● ' : '○ '}${t}</span>`;
+  const status = `<div class="status">${st(conn.tg, 'Telegram подключён')}${st(conn.tg && m.blocking_tg, 'Блокировка в Telegram')}${st(conn.tg && m.autoleave_tg, 'Автовыход из групп')}${st(conn.wa, 'WhatsApp подключён')}${st(conn.wa && m.blocking_wa, 'Блокировка в WhatsApp')}</div>`;
+  return `<div class="kpis">${k}</div>
+    <div class="grid2">
+      ${card('Динамика', '<div id="ch1"></div>', 'wide', `за ${n} дн.`)}
+      ${card('Какие угрозы', '<div id="ch2"></div>', '', 'по дням')}
+      ${card('Доли угроз', '<div id="dn1"></div>')}
+      ${card('Где ловим', '<div id="hb0"></div>')}
+      ${card('Почему сработало', '<div id="hb1"></div>', '', 'сигналы')}
+      ${card('Что именно в профилях', '<div id="hb2"></div>')}
+      ${card('Опасные домены', '<div id="hb3"></div>')}
+      ${card('Группы и каналы', `<div class="rows">${[['group_ok', 'проверено, всё в порядке'], ['group_warned', 'предупреждений'], ['group_would_leave', '«вышел бы» (автовыход выключен)'], ['group_left', 'бот вышел'], ['group_false_positive', 'ошибки, помеченные вами']].map(([k, t]) => `<div class="row" style="grid-template-columns:1fr auto"><span>${t}</span><span class="num">${fmt(g[k] || 0)}</span></div>`).join('')}</div>`)}
+      ${card('Режимы защиты', status)}
+      ${card('Итог периода', `<div class="summary">${summaryText(me, n, false)}</div>`, 'wide')}
+    </div>`;
+}
+function fillMe() {
+  const me = S.data.me; if (!me) return; const n = S.period, d = win(me.daily, n), c = C();
+  chart($('#ch1'), d.map((x) => x.date), [{ name: 'Проверено', color: c.accent, data: d.map((x) => x.checked), fill: true }, { name: 'Помечено', color: c.red, data: d.map((x) => x.flagged) }]);
+  const tb = threatBlocks(me, 0, n); chart($('#ch2'), tb.labels, tb.series, { stacked: true, h: 190 }); donut($('#dn1'), tb.totals);
+  hbars($('#hb0'), [{ name: 'Telegram', v: sum(d, 'tg'), color: c.accent }, { name: 'WhatsApp', v: sum(d, 'wa'), color: c.green }], c.accent);
+  const rb = reasonsBlock(me, n); hbars($('#hb1'), rb.sig.map((x) => ({ ...x, color: c.accent })), c.accent, 'Пока нет помеченных');
+  hbars($('#hb2'), rb.reasons.map((x) => ({ ...x, color: c.violet })), c.violet, 'Пока нет данных'); hbars($('#hb3'), rb.domains, c.red, 'Опасных ссылок не найдено');
+}
+
+function renderAdmin() {
+  const D = S.data, g = D.global, n = S.period;
+  if (!g) return '<div class="empty"><b>Нет доступа</b>Общая статистика только для администратора.</div>';
+  const d = win(g.daily, n), ch = sum(d, 'checked'), fl = sum(d, 'flagged'), fp = sum(d, 'fp'), t = (g.top[String(n)] || {});
+  const k = [
+    kpi('Пользователей', fmt(g.accounts.users), `Telegram ${g.accounts.tg} · WhatsApp ${g.accounts.wa}${g.accounts.wa_pending ? ` (+${g.accounts.wa_pending} ждут QR)` : ''}`),
+    kpi('Заявки на доступ', `${g.access.pending}`, `ждут · одобрено ${g.access.approved} · отклонено ${g.access.rejected}`),
+    kpi('Проверено', fmt(ch), delta(g.daily, 'checked', n)),
+    kpi('Помечено', fmt(fl), `${pct(fl, ch)}% · ${delta(g.daily, 'flagged', n) || ''}`),
+    kpi('Уникальных отправителей', fmt(t.unique_senders || 0), 'помечено ботом (только те, кто писал нашим пользователям)'),
+    kpi('Ложные срабатывания', `${pct(fp, fl)}%`, `${fmt(fp)} из ${fmt(fl)} помеченных`),
+  ].join('');
+  const waves = (g.waves || []).map((w) => `<div class="row" style="grid-template-columns:1fr auto auto"><span class="n">${esc(w.domain)}</span><span class="muted">${w.users} польз.</span><span class="num">${w.count}</span></div>`).join('') || '<div class="muted">Пока нет доменов, замеченных у нескольких пользователей за 7 дней</div>';
+  const rows = (g.table || []).map((r, i) => `<tr class="${r.p === D.myp ? 'me' : ''}"><td>${r.p === D.myp ? 'Вы' : 'Пользователь ' + r.n}</td><td>${r.tg ? '✈️' : ''} ${r.wa ? '💬' : ''}</td><td>${fmt(r.checked30)}</td><td>${fmt(r.flagged30)}</td><td>${fmt(r.blocked30)}</td><td>${fmt(r.fp30)}</td></tr>`).join('');
+  const infra = g.infra || {}, stale = infra.lists_age_h != null && infra.lists_age_h > 30;
+  return `<div class="kpis">${k}</div>
+    <div class="grid2">
+      ${card('Все пользователи: динамика', '<div id="a1"></div>', 'wide', `за ${n} дн.`)}
+      ${card('Угрозы по дням', '<div id="a2"></div>')}
+      ${card('Доли угроз', '<div id="a3"></div>')}
+      ${card('Волны: один домен у нескольких пользователей', `<div class="rows">${waves}</div>`, '', '7 дней')}
+      ${card('Качество: доля ложных срабатываний по неделям', '<div id="a4"></div>')}
+      ${card('Опасные домены', '<div id="a5"></div>')}
+      ${card('Источники и причины', '<div id="a6"></div>')}
+      ${card('Пользователи', `<div class="scroll"><table><tr><th>Кто</th><th>Каналы</th><th>Проверено</th><th>Помечено</th><th>Блок.</th><th>Ложных</th></tr>${rows}</table></div><div class="muted" style="margin-top:8px;font-size:12.5px">За 30 дней, под псевдонимами: имена и контакты на сайт не передаются.</div>`, 'wide')}
+      ${card('Служебное', `<div class="rows"><div class="row" style="grid-template-columns:1fr auto"><span>Возраст списков ссылок</span><span class="num ${stale ? 'up' : ''}">${infra.lists_age_h != null ? infra.lists_age_h + ' ч' : '—'}</span></div><div class="row" style="grid-template-columns:1fr auto"><span>Домены казино в списках</span><span class="num">${fmt(infra.lists_gambling || 0)}</span></div><div class="row" style="grid-template-columns:1fr auto"><span>Домены фишинга и мошенничества</span><span class="num">${fmt(infra.lists_scam || 0)}</span></div><div class="row" style="grid-template-columns:1fr auto"><span>WhatsApp (Evolution) включён</span><span class="num">${infra.whatsapp ? 'да' : 'нет'}</span></div></div>`)}
+      ${card('Итоги периода', `<div class="summary">${summaryText(g, n, true, g)}</div>`, 'wide')}
+    </div>`;
+}
+function fillAdmin() {
+  const g = S.data.global; if (!g) return; const n = S.period, d = win(g.daily, n), c = C();
+  chart($('#a1'), d.map((x) => x.date), [{ name: 'Проверено', color: c.accent, data: d.map((x) => x.checked), fill: true }, { name: 'Помечено', color: c.red, data: d.map((x) => x.flagged) }]);
+  const tb = threatBlocks(g, 0, n); chart($('#a2'), tb.labels, tb.series, { stacked: true, h: 190 }); donut($('#a3'), tb.totals);
+  const q = (g.quality || []).slice(-8);
+  q.length >= 2 ? chart($('#a4'), q.map((x) => x.week), [{ name: 'Ложных, %', color: c.amber, data: q.map((x) => pct(x.fp, x.flagged)), fill: true }], { h: 170 }) : ($('#a4').innerHTML = '<div class="muted">Пока мало данных: график появится, когда наберётся хотя бы две недели с помеченными сообщениями.</div>');
+  const rb = reasonsBlock(g, n); hbars($('#a5'), rb.domains, c.red, 'Опасных ссылок не найдено');
+  hbars($('#a6'), [{ name: 'Telegram', v: sum(d, 'tg'), color: c.accent }, { name: 'WhatsApp', v: sum(d, 'wa'), color: c.green }].concat(rb.sig.map((x) => ({ name: 'Сигнал: ' + x.name, v: x.v, color: c.violet }))), c.accent);
+}
+
+/* ---------------------------------------------------------------- каркас */
+function render() {
+  const app = $('#app'), D = S.data;
+  if (D.error) { app.innerHTML = `<div class="err"><b>${esc(D.error)}</b>${esc(D.hint || '')}</div>`; $('#tabs').innerHTML = ''; $('#period').innerHTML = ''; return; }
+  if (D.empty) { app.innerHTML = '<div class="empty"><b>Данных пока нет</b>Бот отправит первую сводку в течение получаса. Откройте отчёт позже.</div>'; return; }
+  $('#stamp').textContent = 'обновлено ' + new Date(D.generated_at * 1000).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const tabs = [['me', 'Мой обзор']].concat(D.role === 'admin' ? [['admin', 'Админ']] : []);
+  $('#tabs').innerHTML = tabs.length > 1 ? tabs.map(([k, t]) => `<button role="tab" aria-selected="${S.tab === k}" data-k="${k}">${t}</button>`).join('') : '';
+  $('#period').innerHTML = [7, 30, 90].map((p) => `<button class="${S.period === p ? 'on' : ''}" data-p="${p}">${p} дн.</button>`).join('');
+  app.innerHTML = S.tab === 'admin' && D.role === 'admin' ? renderAdmin() : renderMe();
+  (S.tab === 'admin' && D.role === 'admin' ? fillAdmin : fillMe)();
+}
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t || !S.data) return;
+  if (t.dataset.k) { S.tab = t.dataset.k; render(); } else if (t.dataset.p) { S.period = +t.dataset.p; render(); }
+});
+let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => S.data && !S.data.error && !S.data.empty && render(), 150); });
+
+/* ---------------------------------------------------------------- демо-данные (для предпросмотра: ?demo=1) */
+function makeDemo() {
+  let seed = 42; const rnd = () => ((seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296);
+  const days = [], today = new Date(); for (let i = 89; i >= 0; i--) { const d = new Date(today.getTime() - i * 864e5); days.push(d.toISOString().slice(0, 10)); }
+  const mkUser = (rate, pFlag, blocking) => days.map((date, i) => { const grow = 0.6 + (i / 90) * 0.8, checked = Math.round(rate * grow * (0.5 + rnd())), flagged = Math.round(checked * pFlag * (0.6 + rnd() * 0.8)); const g = Math.round(flagged * 0.5), s = Math.round(flagged * 0.3), sp = Math.max(0, flagged - g - s);
+    const fp = rnd() < 0.12 ? 1 : 0, blocked = blocking ? Math.round(flagged * 0.55) : 0, wb = blocking ? Math.round(flagged * 0.2) : Math.round(flagged * 0.6); const wa = Math.round(checked * 0.3);
+    return { date, checked, flagged, blocked, would_block: wb, warned: Math.max(0, flagged - blocked - wb), fp, known_link: rnd() < 0.05 ? 1 : 0, gambling: g, scam: s, spam: sp, tg: checked - wa, wa, group_left: rnd() < 0.03 ? 1 : 0 }; });
+  const top = (k) => ({ reasons: [['нет фото', 14 * k], ['N сообщений за минуту', 9 * k], ['ссылка в сообщении', 8 * k], ['в «О себе»: gambling', 5 * k], ['нет общих чатов', 4 * k]], domains: [['1win-bonus.com', 11 * k, 'gambling'], ['kaspi-secure-pay.top', 7 * k, 'scam'], ['vavada-kz.casino', 5 * k, 'gambling'], ['bonus-gift.xyz', 3 * k, 'spam']], signals: { текст: 30 * k, ссылка: 14 * k, профиль: 9 * k }, unique_senders: 12 * k });
+  const tops = { 7: top(1), 30: top(4), 90: top(11) };
+  const groups = (k) => ({ group_ok: 6 * k, group_warned: 2 * k, group_would_leave: 1 * k, group_left: k > 1 ? 1 : 0, group_false_positive: 0 });
+  const mk = (daily, conn, modes) => ({ daily, top: Object.fromEntries(Object.entries(tops).map(([n, v]) => [n, v])), groups: { 7: groups(1), 30: groups(3), 90: groups(7) }, connected: conn, modes });
+  const u1 = mkUser(5, 0.3, true), u2 = mkUser(3, 0.2, false), u3 = mkUser(2, 0.25, true);
+  const fields = ['checked', 'flagged', 'blocked', 'would_block', 'warned', 'fp', 'known_link', 'gambling', 'scam', 'spam', 'tg', 'wa', 'group_left'];
+  const all = days.map((date, i) => Object.fromEntries([['date', date]].concat(fields.map((f) => [f, u1[i][f] + u2[i][f] + u3[i][f]]))));
+  const p1 = 'demo-me', tb = (u) => ({ p: u.p, n: u.n, tg: true, wa: u.wa, checked30: u.c, flagged30: u.f, blocked30: u.b, fp30: u.fp });
+  return {
+    role: 'admin', demo: true, generated_at: Math.floor(Date.now() / 1000), tz: 5, days, myp: p1,
+    me: mk(u1, { tg: true, wa: true }, { blocking_tg: true, autoleave_tg: false, blocking_wa: false }),
+    global: { ...mk(all, {}, {}), accounts: { users: 3, tg: 3, wa: 1, wa_pending: 0 }, access: { approved: 2, pending: 1, rejected: 1 },
+      waves: [{ domain: '1win-bonus.com', users: 3, count: 14 }, { domain: 'kaspi-secure-pay.top', users: 2, count: 6 }],
+      quality: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ week: days[Math.max(0, 89 - (7 - i) * 7)], flagged: 40 + i * 6, fp: [4, 3, 3, 2, 3, 2, 1, 2][i] })),
+      table: [{ p: p1, n: 1, tg: true, wa: true, c: 150, f: 45, b: 22, fp: 3 }, { p: 'u2', n: 2, tg: true, wa: false, c: 90, f: 18, b: 0, fp: 1 }, { p: 'u3', n: 3, tg: true, wa: false, c: 60, f: 15, b: 7, fp: 0 }].map((u) => ({ ...tb(u) })),
+      infra: { lists_age_h: 6.2, lists_gambling: 342623, lists_scam: 483670, whatsapp: true } },
+  };
+}
+
+/* ---------------------------------------------------------------- загрузка */
+async function load() {
+  const qs = new URLSearchParams(location.search), tg = window.Telegram && window.Telegram.WebApp;
+  if (qs.get('demo') === '1' || location.protocol === 'file:') {  /* открыт с диска без сервера: показываем демо */ S.demo = true; S.data = makeDemo(); $('#banner').innerHTML = '<div class="banner">🧪 Это демо-данные для предпросмотра, не ваши цифры.</div>'; return render(); }
+  let token = qs.get('t') || sessionStorage.getItem('sg_t');
+  if (qs.get('t')) { try { sessionStorage.setItem('sg_t', qs.get('t')); } catch (_) {} history.replaceState(null, '', location.pathname); }
+  const headers = {};
+  if (token) headers['x-token'] = token; else if (tg && tg.initData) headers['x-tg-init-data'] = tg.initData;
+  if (tg) { try { tg.ready(); tg.expand(); } catch (_) {} }
+  if (!headers['x-token'] && !headers['x-tg-init-data']) { S.data = { error: 'Нужна ссылка из бота', hint: 'Отправьте боту команду /report, он пришлёт личную ссылку на ваш отчёт.' }; return render(); }
+  try {
+    const r = await fetch('/api/data', { headers, cache: 'no-store' });
+    if (r.status === 401) { S.data = { error: 'Ссылка недействительна или устарела', hint: 'Отправьте боту /report, чтобы получить новую (она действует 24 часа).' }; }
+    else if (!r.ok) { S.data = { error: 'Сервер временно недоступен', hint: 'Попробуйте через минуту.' }; }
+    else S.data = await r.json();
+  } catch (_) { S.data = { error: 'Нет соединения', hint: 'Проверьте интернет и обновите страницу.' }; }
+  render();
+}
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "spamguard-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Аналитика SpamGuard: сайт на Vercel, он же Telegram Mini App",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node dev-server.js",
+    "test": "node tests/test_api.js"
+  },
+  "dependencies": {
+    "@vercel/blob": "2.9.0"
+  }
+}

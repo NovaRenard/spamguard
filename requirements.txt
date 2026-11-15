@@ -1,0 +1,8 @@
+scikit-learn
+joblib
+aiogram>=3.17
+telethon
+cryptography
+qrcode[pil]
+aiohttp
+tldextract

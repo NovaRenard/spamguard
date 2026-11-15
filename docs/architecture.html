@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Схема SpamGuard</title>
+<style>
+  :root {
+    --bg: #0e1621; --card: #17212b; --card2: #1e2c3a; --line: #2b3b4c; --text: #e8eef5; --muted: #93a3b7;
+    --accent: #2aabee; --green: #4cd964; --amber: #ffb020; --red: #ff6b6b; --violet: #a78bfa;
+    --glow: rgba(42,171,238,.35);
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #f3f6fb; --card: #ffffff; --card2: #eef3f9; --line: #cfd9e6; --text: #15202b; --muted: #5a6b7f;
+      --accent: #1b8fd0; --green: #1f9d3a; --amber: #b87400; --red: #d64545; --violet: #6d4fd6;
+      --glow: rgba(27,143,208,.25);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 16px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; }
+  header { padding: 22px 24px 8px; max-width: 1500px; margin: 0 auto; }
+  h1 { margin: 0; font-size: clamp(24px, 3.4vw, 36px); letter-spacing: -.01em; }
+  header p { margin: 6px 0 0; color: var(--muted); max-width: 70ch; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 14px 0 0; font-size: 14px; color: var(--muted); align-items: center; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; color: var(--text); }
+  .toggle input { accent-color: var(--accent); width: 18px; height: 18px; }
+
+  .wrap { max-width: 1500px; margin: 0 auto; padding: 8px 24px 40px; display: grid; grid-template-columns: minmax(0, 1fr) 430px; gap: 22px; align-items: start; }
+  .diagram { position: relative; padding: 8px 46px 30px 8px; }
+  svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 3; }
+  .grid { position: relative; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 62px 50px; }
+
+  .node { position: relative; text-align: left; background: var(--card); color: var(--text); border: 2px solid var(--line); border-radius: 16px;
+    padding: 14px 16px; cursor: pointer; font: inherit; transition: transform .15s, border-color .15s, box-shadow .15s, opacity .15s; min-height: 92px; }
+  .node:hover { transform: translateY(-2px); border-color: var(--accent); }
+  .node:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .node .ico { font-size: 26px; line-height: 1; }
+  .node h3 { margin: 6px 0 2px; font-size: 17px; line-height: 1.25; }
+  .node p { margin: 0; font-size: 13.5px; color: var(--muted); line-height: 1.35; }
+  .badge { position: absolute; top: 10px; right: 10px; font-size: 11.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; border: 1.5px solid; }
+  .b-ok { color: var(--green); border-color: var(--green); }
+  .b-off { color: var(--amber); border-color: var(--amber); }
+  .b-plan { color: var(--violet); border-color: var(--violet); }
+  .node.plan { border-style: dashed; }
+  .node.core { border-color: var(--accent); box-shadow: 0 0 0 4px var(--glow), 0 10px 40px var(--glow); min-height: 150px; background: linear-gradient(160deg, var(--card2), var(--card)); }
+  .node.core h3 { font-size: 22px; }
+  .node.core .ico { font-size: 40px; }
+  .node.sel { border-color: var(--accent); box-shadow: 0 0 0 4px var(--glow); transform: translateY(-2px); }
+  .node.dim { opacity: .45; }
+
+  .c-me { grid-column: 1 / 7; } .c-tg { grid-column: 1 / 4; } .c-wa { grid-column: 4 / 7; }
+  .c-lists { grid-column: 1 / 3; } .c-filter { grid-column: 3 / 5; } .c-links { grid-column: 1 / 3; }
+  .c-core { grid-column: 3 / 5; } .c-profile { grid-column: 5 / 7; } .c-docs { grid-column: 1 / 3; }
+  .c-decision { grid-column: 3 / 5; } .c-groups { grid-column: 5 / 7; } .c-infra { grid-column: 1 / 7; }
+  .r1 { grid-row: 1; } .r2 { grid-row: 2; } .r3 { grid-row: 3; } .r4 { grid-row: 4; } .r5 { grid-row: 5; } .r6 { grid-row: 6; }
+
+  .edge { fill: none; stroke: var(--muted); stroke-width: 2; opacity: .75; }
+  .edge.dash { stroke-dasharray: 7 6; }
+  .edge.on { stroke: var(--accent); stroke-width: 3.2; opacity: 1; }
+  .elabel { font-size: 12px; fill: var(--text); }
+  .elabel-bg { fill: var(--bg); stroke: var(--line); }
+  .elabel-bg.on { stroke: var(--accent); }
+
+  aside { position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow: auto; background: var(--card); border: 2px solid var(--line); border-radius: 18px; padding: 20px 22px 24px; }
+  aside h2 { margin: 0 0 4px; font-size: 24px; line-height: 1.2; }
+  aside .status { display: inline-block; margin: 6px 0 10px; font-size: 13px; font-weight: 700; padding: 2px 10px; border-radius: 999px; border: 1.5px solid; }
+  aside h4 { margin: 18px 0 6px; font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+  aside p, aside li { color: var(--text); }
+  aside ul, aside ol { margin: 6px 0; padding-left: 22px; }
+  aside li { margin: 4px 0; }
+  .kid { background: var(--card2); border-radius: 14px; padding: 12px 14px; font-size: 16.5px; line-height: 1.6; border-left: 5px solid var(--accent); }
+  .kid p { margin: 0 0 10px; } .kid p:last-child { margin: 0; }
+  .example { background: var(--card2); border-radius: 12px; padding: 10px 14px; font-size: 14.5px; }
+  .files code, aside code { background: var(--card2); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; font-size: 13px; }
+  .jump { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .jump button { font: inherit; font-size: 13.5px; background: transparent; color: var(--text); border: 1.5px solid var(--line); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+  .jump button:hover { border-color: var(--accent); color: var(--accent); }
+  table.t { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 6px 0; }
+  table.t td, table.t th { border-bottom: 1px solid var(--line); padding: 5px 6px; text-align: left; vertical-align: top; }
+  .only-adult { display: none; }
+  body.adult .only-adult { display: block; }
+  .hint { color: var(--muted); }
+  .hint b { color: var(--text); }
+  .steps { counter-reset: s; list-style: none; padding-left: 0; }
+  .steps li { counter-increment: s; position: relative; padding-left: 34px; margin: 9px 0; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+
+  @media (max-width: 980px) {
+    .wrap { grid-template-columns: 1fr; padding: 8px 14px 40px; }
+    aside { position: static; max-height: none; }
+  }
+  @media (max-width: 760px) {
+    header { padding: 16px 14px 4px; }
+    .diagram { padding: 8px 0 20px; }
+    svg.edges { display: none; }
+    .grid { grid-template-columns: 1fr; gap: 12px; }
+    .grid > .node { grid-column: 1 !important; grid-row: auto !important; }
+    .node::after { content: attr(data-step); position: absolute; left: -2px; top: -8px; background: var(--accent); color: #fff; width: 24px; height: 24px; border-radius: 50%; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+    .toggle { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Как устроен SpamGuard</h1>
+  <p>Схема, по которой сообщение идёт от Telegram или WhatsApp до решения «пропустить, предупредить или заблокировать». Нажми на любой блок, чтобы прочитать, как он работает.</p>
+  <div class="legend">
+    <span><i class="dot" style="background:var(--green)"></i> работает</span>
+    <span><i class="dot" style="background:var(--amber)"></i> по умолчанию только предупреждает</span>
+    <span><i class="dot" style="background:var(--violet)"></i> план, ещё не сделано</span>
+    <label class="toggle"><input type="checkbox" id="adult"> Подробности для взрослых</label>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="diagram" id="diagram">
+    <svg class="edges" id="edges" aria-hidden="true">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+        <marker id="arrOn" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      </defs>
+    </svg>
+    <div class="grid" id="grid"></div>
+  </div>
+  <aside id="panel" aria-live="polite"></aside>
+</div>
+
+<script>
+/* ---------------------------------------------------------------- содержимое блоков */
+const N = {
+  me: {
+    ico: '🎮', title: 'Вы и Telegram-бот', sub: 'пульт управления всей защитой', status: 'ok', pos: 'c-me r1', step: 1,
+    kid: [
+      'Представь пульт от телевизора. Бот в Telegram — это пульт от всей защиты. Через него ты подключаешь свои чаты, получаешь предупреждения и нажимаешь кнопки: «Это не спам» или «Выйти из группы».',
+      'Бот не пускает чужих. Если незнакомый человек нажмёт «старт», тебе придёт вопрос с двумя кнопками — «Одобрить» и «Отклонить». Пока ты не одобрил, человек ничего не может.'
+    ],
+    how: [
+      'Команды: <code>/start</code> (подключить Telegram по QR), <code>/whatsapp</code>, <code>/status</code>, <code>/stats</code>, <code>/live</code> и <code>/dry</code> (блокировать или только предупреждать), <code>/groupleave</code>, <code>/scan</code>, <code>/testmode</code>, <code>/stop</code>.',
+      'Доступ: постоянные ID в <code>.env</code> (<code>ADMIN_IDS</code>, <code>ALLOWED_IDS</code>) и заявки с кнопками. Одобренные записываются в базу. Не больше 5 заявок в час.',
+      'Администратор: <code>/users</code> и <code>/revoke &lt;id&gt;</code> (отзыв доступа завершает сессию человека).',
+      'Любой текст, присланный боту, он проверяет и показывает вердикт: удобно для проверки без второго аккаунта.'
+    ],
+    example: 'Незнакомец нажал /start → тебе пришло «🔔 Запрос доступа…» → ты нажал «✅ Одобрить» → ему пришло «Доступ одобрен».',
+    files: ['service.py'], jump: ['tg', 'wa', 'decision']
+  },
+  tg: {
+    ico: '✈️', title: 'Telegram', sub: 'первый источник сообщений', status: 'ok', pos: 'c-tg r2', step: 2,
+    kid: [
+      'Бот входит в твой Telegram так же, как ты входишь на компьютере: показывает QR-код (чёрно-белый квадратик), ты наводишь на него телефон и нажимаешь «разрешить». Теперь бот «слышит», кто тебе пишет.',
+      'Он ничего не пишет за тебя и ничего не удаляет, пока ты сам не включишь блокировку. А если захочешь всё отменить — команда <b>/stop</b>, и бот сразу выходит из твоего аккаунта.'
+    ],
+    how: [
+      'Библиотека Telethon: <code>qr_login()</code> с твоим <code>api_id</code>/<code>api_hash</code>, QR обновляется каждые ~30 секунд. Сканировать нужно с другого устройства.',
+      'Сессия (пропуск в аккаунт) хранится в <code>state.db</code> в зашифрованном виде (Fernet). Ключ — в <code>.env</code> на сервере. <code>/stop</code> вызывает <code>log_out()</code>: сессия завершается на стороне Telegram.',
+      'Если включён пароль 2FA, бот просит его в чате и сразу удаляет сообщение.',
+      'События: входящие личные сообщения, добавление в группу/канал, первое сообщение в группе.',
+      'Блокировка: жалоба на спам + блок + удаление чата. Не больше 5 в час.'
+    ],
+    example: 'Новый человек пишет «Привет! Заработай 5000 в день» → бот проверяет → присылает тебе предупреждение.',
+    files: ['service.py', 'senderprofile.py'], jump: ['me', 'filter', 'groups']
+  },
+  wa: {
+    ico: '💬', title: 'WhatsApp', sub: 'второй источник, подключается через Telegram', status: 'off', pos: 'c-wa r2', step: 3,
+    kid: [
+      'WhatsApp сам не умеет дружить с нашим ботом. Поэтому есть «переводчик» — программа <b>Evolution</b>. Вот как всё подключается:',
+      '<ol class="steps"><li>Ты пишешь боту в Telegram: <b>/whatsapp</b>.</li><li>Бот просит переводчика сделать для тебя отдельную «комнату» и присылает QR-код прямо в Telegram.</li><li>Ты открываешь WhatsApp: Настройки → Связанные устройства → Привязка устройства, и наводишь на QR.</li><li>Переводчик слышит твои сообщения из WhatsApp и шепчет их боту. Бот проверяет.</li><li>Если что-то подозрительное — предупреждение приходит тебе в <b>Telegram</b>.</li></ol>',
+      'Если QR не отсканировали за 5 минут, «комната» сама убирается, чтобы мусор не копился.'
+    ],
+    how: [
+      'Evolution API v2.3.7 (на основе Baileys) в Docker, рядом свой Postgres и Redis. Наружу порты не открыты.',
+      'Экземпляр на каждого человека: <code>sg_&lt;telegram id&gt;</code>. Evolution шлёт вебхуки боту по внутренней сети на адрес с секретом: <code>qrcode.updated</code>, <code>connection.update</code>, <code>messages.upsert</code>, <code>group-participants.update</code>.',
+      '<b>Уборщик</b> раз в минуту сверяет Evolution с нашей базой: удаляет неподключённые старше 5 минут (<code>WA_PAIR_TTL_SEC</code>), «сирот» без записи у нас и подключённые, которые давно без связи (больше часа). Чужие экземпляры не трогает.',
+      'Режим «блокировка и автовыход из групп» включается отдельно командой <code>/walive</code>. WhatsApp строго относится к автоматизации: блокировка номера возможна, поэтому по умолчанию только предупреждения.',
+      'Новый чат = вы туда не писали и в истории чата нет сообщений до подключения. Если Evolution не ответил, бот молчит (лучше пропуск, чем ложная тревога).'
+    ],
+    example: '/whatsapp → QR в Telegram → скан → «✅ WhatsApp подключён. Анализ запущен» → всё остальное как у Telegram.',
+    files: ['whatsapp.py', 'docker-compose.yml', 'evolution.env.example'], jump: ['me', 'infra', 'filter']
+  },
+  filter: {
+    ico: '🤝', title: 'Знакомый или чужой?', sub: 'первый вопрос к каждому сообщению', status: 'ok', pos: 'c-filter r3', step: 4,
+    kid: [
+      'Бот не хочет мешать твоим друзьям. Поэтому сначала спрашивает: «Я знаю этого человека?» Если он в твоих контактах или ты ему уже отвечал, это друг. Друга бот не проверяет так строго.',
+      'А вот незнакомца, который пишет первым, бот изучает внимательно. Но если твой друг вдруг пришлёт опасную ссылку (его мог взломать мошенник), бот всё равно скажет тебе: «Возможно, его взломали».'
+    ],
+    how: [
+      'Telegram: чужой = не контакт, не бот, не верифицированный, и вы ему никогда не писали. Результат запоминается (список доверенных).',
+      'WhatsApp: чужой = вы туда не писали и истории до подключения нет.',
+      'Если вы ответили, собеседник становится доверенным навсегда. Кнопка «Это не спам» делает то же и помечает ошибку в статистике.',
+      'У знакомых проверяются только ссылки: предупреждение при риске от 80%, не чаще раза в 10 минут, без блокировки.'
+    ],
+    example: 'Ты написал(а) Ане вчера → её сегодняшние сообщения не проверяются. Незнакомец пишет в первый раз → проверка.',
+    files: ['service.py', 'whatsapp.py'], jump: ['core', 'links']
+  },
+  lists: {
+    ico: '📚', title: 'Списки: обновление раз в сутки', sub: 'откуда ссылки знают, что плохо', status: 'ok', pos: 'c-lists r3', step: 5,
+    kid: [
+      'Представь школьный список «плохих сайтов», который учителя обновляют каждый день. Бот делает так же: раз в сутки сам скачивает свежие списки и кладёт в папку. Потом сверяется с ними мгновенно.',
+      'Если интернет пропал, бот не ломается: он просто пользуется вчерашним списком.'
+    ],
+    how: [
+      'Источники: blocklistproject на GitHub. <b>Казино и ставки</b> (342 623 домена), <b>фишинг + мошенничество + фрод</b> (483 670 доменов) и фид <b>OpenPhish</b> (около 300 свежих адресов). Всего около 23 МБ.',
+      'Обновление: цикл проверяет раз в час, скачивает, если файлам больше ~22 часов. Файлы пишутся во временный файл и подменяются разом, ошибка одного источника не ломает остальные.',
+      'Хранение: папка <code>/data/lists</code> (том на сервере). В памяти около +110 МБ (бот целиком ~367 МБ из 768). Поиск по списку — меньше микросекунды.',
+      'Не берём список malware (72 МБ, слишком тяжёлый), а URLhaus теперь требует ключ.'
+    ],
+    example: 'Утро: бот видит, что файлам больше суток → скачивает → через секунды все проверки идут по свежим данным.',
+    files: ['links.py'], jump: ['links']
+  },
+  links: {
+    ico: '🔗', title: 'Проверка ссылок', sub: 'адрес сверяется со списками и на подделку', status: 'ok', pos: 'c-links r4', step: 6,
+    kid: [
+      'Ссылка — как адрес дома. Бот <b>не заходит</b> в дом (на сайт), а смотрит по спискам: «Этот адрес есть в списке плохих?» Ещё он замечает подделки: <code>kaspi-secure.top</code> — это не настоящий Kaspi!',
+      'Если ссылка короткая (вроде bit.ly), бот спрашивает у самого сервиса сокращений, куда она ведёт, и проверяет настоящий адрес. Спамеры любят прятать адрес под словами «кликни сюда» или писать <code>1win[.]casino</code> — бот и это разгадывает.',
+      'Чужим ссылка добавляет подозрения. Знакомым бот ссылки тоже проверяет: вдруг друга взломали.'
+    ],
+    how: [
+      '<b>Не ходим на сайты по ссылкам</b>: нет риска, что мошенник заставит сервер обратиться во внутреннюю сеть. Единственное исключение — раскрытие коротких ссылок, и то только на самом сокращателе (редиректы читаются вручную).',
+      '<b>Порядок проверки:</b> точное совпадение с OpenPhish → безопасный список (google.com, kaspi.kz…) → раскрытие сокращения → списки доменов (и родительские домены) → эвристики.',
+      '<b>Эвристики:</b> маскировка под бренд (kaspi, halyk, binance…, включая опечатки и поддомены), необычные символы (punycode), IP вместо домена, «@» в адресе, зоны .top/.xyz…, слова login/verify/bonus в адресе, имя в t.me похоже на казино, бесплатный хостинг.',
+      '<b>Возраст домена</b> (RDAP): моложе 30 дней добавляет +0.30 к риску. Отправляется только имя домена; можно отключить.',
+      'Результат объединяется с оценкой текста: <code>1 − (1 − текст)(1 − ссылки)</code>.',
+      'Спрятанные ссылки: из разметки Telegram достаются адреса «кликни сюда». Ограничение: не больше 5 ссылок на сообщение.'
+    ],
+    table: [['домен казино из списка', '92%'], ['домен фишинга из списка', '95%'], ['kaspi-secure-pay.top', '88%'], ['kaspi.kz (настоящий)', '0%'], ['t.me/vavada_bonus_kz', '60%'], ['example.com', '0%']],
+    example: 'Незнакомец: «Привет, глянь» + ссылка на казино → риск 92% → блокировка (в режиме /live) или предупреждение.',
+    files: ['links.py', 'tests_links.py'], jump: ['lists', 'core', 'docs']
+  },
+  docs: {
+    ico: '📎', title: 'Документы и фото', sub: 'ещё не сделано, вот как будет', status: 'plan', pos: 'c-docs r5', step: 7, plan: true,
+    kid: [
+      '<b>Важно: этого в боте пока нет.</b> Вот как мы это сделаем.',
+      'Файл — как посылка. Чтобы понять, что посылка опасная, не нужно её вскрывать: достаточно взглянуть на коробку. Если незнакомец присылает файл «Kaspi.apk», это почти всегда вирус для телефона. Бот будет смотреть на имя и тип файла и сразу поднимать тревогу.',
+      'С картинками так: бот будет читать QR-код на картинке (вдруг он ведёт на ловушку) и слова на ней (вдруг это реклама казино), а потом проверять так же, как обычный текст и ссылки.'
+    ],
+    how: [
+      '<b>Шаг 1, без скачивания:</b> смотрим расширение, тип, размер. Опасные у чужого: <code>.apk .exe .scr .bat .js .vbs .lnk .iso .jar</code>, двойные расширения вроде <code>счёт.pdf.exe</code>, документы с макросами (<code>.docm .xlsm</code>), архивы с паролем.',
+      '<b>Шаг 2, по желанию:</b> скачать во временную папку (с ограничением размера, никогда не запуская), посчитать хеш SHA-256 и сверить с базами вредоносных файлов (VirusTotal, MalwareBazaar). Файл при этом не отправляется, только хеш. Из PDF и Office-файлов достаём ссылки и проверяем нашей проверкой ссылок.',
+      '<b>Картинки:</b> расшифровать QR и прогнать адрес через проверку ссылок; OCR (русский и казахский) и прогнать текст через классификатор. Только для чужих.',
+      'Статус: идея согласована, код не написан.'
+    ],
+    example: 'Планируемо: незнакомец прислал «Kaspi.apk» → метаданные → «опасный тип файла» → предупреждение, файл не скачивается.',
+    files: ['(пока нет)'], jump: ['links', 'core']
+  },
+  core: {
+    ico: '🧠', title: 'Ядро: классификатор', sub: 'маленький «мозг» бота', status: 'ok', pos: 'c-core r4 core', step: 8,
+    kid: [
+      'Это маленький мозг бота. Его научили на тысячах примеров: «вот так пишут мошенники и казино, а вот так пишут обычные люди». Увидев сообщение, мозг говорит: «Это казино — я уверен на 94%».',
+      'Это <b>не</b> большая нейросеть вроде ChatGPT. Это маленькая программа, которая считает, какие слова и кусочки слов подозрительные. Зато она быстрая, лёгкая и понятная: можно посмотреть, почему она так решила.',
+      'У мозга есть ещё правила-подсказки: слова вроде «казино» и «фриспины» сразу вызывают подозрение, а «ставка по ипотеке» — нет. И он умеет разгадывать хитрости: «к а з и н о» или русские буквы вперемешку с английскими.',
+      'Мозг понимает русский, казахский и их смесь.'
+    ],
+    how: [
+      '<b>Нормализация:</b> «к а з и н о» → «казино», латиница внутри русского слова → кириллица, невидимые символы убираются.',
+      '<b>Признаки:</b> TF-IDF по кускам слов (2–5 символов) и по словам (1–2). <b>Модель:</b> логистическая регрессия на 4 класса: <code>ok</code>, <code>spam</code>, <code>gambling</code>, <code>scam</code>. Риск текста = 1 − P(ok).',
+      '<b>Правила:</b> «сильные» слова (казино, 1win, фриспин…) дают риск от 60%; «слабые» («ставка», «бонус») — только по две или со ссылкой. Итог текста = max(модель, правила).',
+      '<b>Данные:</b> 2 996 синтетических примеров (шаблоны + искажения) и 80 написанных вручную. На 80 ручных примерах, которых модель не видела, точность около 97%. <b>Оценка оптимистична:</b> данные во многом синтетические, на реальном потоке будет ниже.',
+      '<b>Итоговая формула:</b> <code>1 − (1 − текст)(1 − профиль)</code>; ссылки усиливают оценку текста так же. Модель собирается при сборке контейнера из <code>data/</code>.'
+    ],
+    example: '«к а з и н о Vavada бонус» → нормализация → «казино vavada бонус» → «gambling 94%».',
+    files: ['classifier.py', 'make_dataset.py', 'train.py', 'data/'], jump: ['profile', 'links', 'decision', 'groups']
+  },
+  profile: {
+    ico: '🧑', title: 'Профиль отправителя', sub: 'мошенника иногда видно по «обложке»', status: 'ok', pos: 'c-profile r4', step: 9,
+    kid: [
+      'Иногда мошенника видно не по словам, а по «обложке»: у него нет фото, в описании реклама казино, а имя похоже на «Casino Bonus». Бот смотрит на это, как продавец смотрит на человека у входа.',
+      'Каждая странность даёт чуть-чуть подозрения. Но «нет фото» само по себе ничего не значит: у многих хороших людей его тоже нет. А вот вместе несколько странностей — уже повод насторожиться.'
+    ],
+    how: [
+      '<b>Громкие признаки</b> (хватает одного): Telegram сам пометил аккаунт как scam/fake (0.95), в «О себе» казино/спам (до 0.85), имя/@username как у казино (до 0.80).',
+      '<b>Тихие признаки</b> (только вместе, в сумме не больше 0.35): нет общих чатов (0.10), ссылка в сообщении (0.10), серия сообщений за минуту (0.15), нет фото (0.08), нет @username (0.05).',
+      'Складываются по формуле «noisy-OR»: независимые подозрения усиливают друг друга. В WhatsApp признаков меньше (нет флага scam/fake и «общих чатов»).'
+    ],
+    example: 'Текст «Привет, как дела?» (4%), но в «О себе» ссылка на казино → профиль 88% → итог 88%.',
+    files: ['senderprofile.py'], jump: ['core']
+  },
+  groups: {
+    ico: '👥', title: 'Группы и каналы', sub: 'не вступили ли мы в чат про ставки', status: 'off', pos: 'c-groups r5', step: 10,
+    kid: [
+      'Иногда тебя добавляют в чат про казино. Бот читает название, описание и несколько последних сообщений. Если большая часть про ставки, он говорит тебе об этом.',
+      'Выходить из чата сам он будет, только если ты разрешил (команды <b>/groupleave</b> в Telegram или <b>/walive</b> в WhatsApp). Свои группы и те, где ты сам писал(а), бот никогда не трогает.'
+    ],
+    how: [
+      'Смотрим на три вещи: название и @username, описание, последние ~25 сообщений. Главный признак — <b>доля</b> подозрительных сообщений (от 25% и не меньше 3), чтобы группа с одной рекламой не считалась «гемблингом».',
+      'Предупреждение от 50%. Выход автоматически: риск от 85% и тема «гемблинг», автовыход включён, не больше 10 в час. Мошеннические и спам-группы — только предупреждение.',
+      'Проверяется при добавлении в группу, при первом сообщении, раз в 7 дней и по команде <code>/scan</code> (Telegram).',
+      'Новостной канал про казино получает лишь предупреждение (около 70%), но не выход.'
+    ],
+    example: '«Казино Вавада | Бонусы», 4 из 4 последних сообщений про слоты → «Бот вышел из группы…» (если автовыход включён).',
+    files: ['groupcheck.py', 'service.py', 'whatsapp.py'], jump: ['core', 'decision']
+  },
+  decision: {
+    ico: '🚦', title: 'Решение', sub: 'светофор: что делать с итоговым баллом', status: 'off', pos: 'c-decision r5', step: 11,
+    kid: [
+      'Когда мозг и подсказки сложили баллы, бот включает светофор:',
+      '<ul><li><b style="color:var(--green)">Зелёный</b> (меньше 50%): ничего не делаем.</li><li><b style="color:var(--amber)">Жёлтый</b> (50–85%): присылаем тебе предупреждение.</li><li><b style="color:var(--red)">Красный</b> (85% и больше): блокируем, но только если ты сам включил блокировку.</li></ul>',
+      'Сначала бот только предупреждает. Если он ошибся, нажми «Это не спам», и бот запомнит этого человека. И ещё: больше 5 блокировок в час бот не делает, даже если очень хочет.'
+    ],
+    how: [
+      'Пороги: <code>WARN_AT=0.5</code>, <code>BLOCK_AT=0.85</code>. Блокировка: жалоба на спам, блок, удаление чата. Лимиты: <code>MAX_BLOCKS_PER_HOUR=5</code>, выходов из групп 10/час.',
+      'Режим по умолчанию — «только уведомления» (<code>/dry</code>). Включить: <code>/live</code> (Telegram), <code>/walive</code> (WhatsApp, отдельно).',
+      '<code>/testmode</code>: между двумя своими аккаунтами бот отвечает «я бы заблокировал…», никого не блокируя.',
+      'Каждое решение записывается в статистику (без текста сообщения). Кнопка «Это не спам» помечает ошибку, видно в <code>/stats</code>.',
+      'Предупреждение приходит в Telegram-бот (стрелка вверх), с кнопками.'
+    ],
+    example: 'Риск 61% → «⚠️ Подозрительное сообщение… Не заблокирован» + кнопка «Это не спам, доверять».',
+    files: ['service.py', 'whatsapp.py'], jump: ['me', 'core']
+  },
+  infra: {
+    ico: '🖥️', title: 'Сервер и безопасность', sub: 'где живёт бот и что он хранит', status: 'ok', pos: 'c-infra r6', step: 12,
+    kid: [
+      'Бот живёт в «коробочках» (Docker) на компьютере, который всегда включён. В одной коробочке сам бот, в других — переводчик WhatsApp и его память. Они разговаривают между собой внутри, а наружу двери закрыты.',
+      'Бот хранит как можно меньше. Ключ входа лежит в «сейфе» (зашифрован). <b>Тексты сообщений бот не запоминает</b>: только цифры для статистики. Команда /stop стирает всё.'
+    ],
+    how: [
+      '<b>Контейнеры:</b> <code>spamguard</code> (бот, лимит 768 МБ), <code>sg-evolution</code> (1,5 ГБ), <code>sg-evolution-pg</code> (Postgres), <code>sg-evolution-redis</code>. Автоперезапуск, порты наружу не опубликованы, вебхуки — по внутренней сети с секретом.',
+      '<b>Хранилище:</b> <code>state.db</code> — зашифрованные сессии (Fernet), доверенные чаты, заявки на доступ, события (риск, класс, действие, причины; без текста), проверки групп, данные WhatsApp.',
+      '<b>Секреты</b> (токен бота, ключи, секрет вебхука) лежат в <code>.env</code> на сервере, в репозиторий не попадают. Репозиторий на GitHub приватный.',
+      '<b>Честные оговорки:</b> ключ шифрования лежит рядом с базой, поэтому при взломе сервера сессии под угрозой. Файл сессии даёт полный доступ к аккаунту. Автоматизация личных аккаунтов — серая зона правил Telegram и WhatsApp.',
+      'Обновление: <code>git archive … | tar</code> на сервер и <code>docker compose up -d --build</code>.'
+    ],
+    example: 'Сервер перезагрузился → Docker поднимает контейнеры → бот восстанавливает сессии из <code>state.db</code>.',
+    files: ['Dockerfile', 'docker-compose.yml', 'README.md'], jump: ['wa', 'me']
+  }
+};
+
+/* связи между блоками: from, fromSide, fromOffset, to, toSide, toOffset, подпись */
+const E = [
+  ['me', 'b', .25, 'tg', 't', .5, 'QR-вход: /start'],
+  ['me', 'b', .75, 'wa', 't', .5, '/whatsapp → QR'],
+  ['tg', 'b', .5, 'filter', 't', .3, 'сообщение'],
+  ['wa', 'b', .5, 'filter', 't', .7, 'сообщение'],
+  ['filter', 'b', .5, 'core', 't', .5, 'чужой: проверяем'],
+  ['lists', 'b', .5, 'links', 't', .5, 'раз в сутки'],
+  ['links', 'r', .5, 'core', 'l', .35, 'ссылки'],
+  ['profile', 'l', .5, 'core', 'r', .35, 'профиль'],
+  ['groups', 'l', .35, 'core', 'r', .88, 'группы'],
+  ['docs', 'r', .25, 'core', 'l', .88, 'план', true],
+  ['core', 'b', .5, 'decision', 't', .5, 'итоговый риск'],
+  ['decision', 'loop', 0, 'me', 'r', .5, 'предупреждение + кнопки в Telegram']
+];
+
+/* ---------------------------------------------------------------- построение */
+const grid = document.getElementById('grid'), panel = document.getElementById('panel'), svg = document.getElementById('edges');
+const STATUS = { ok: ['✅ работает', 'b-ok'], off: ['🟡 по умолчанию только предупреждает', 'b-off'], plan: ['🚧 план, ещё не сделано', 'b-plan'] };
+const BADGE = { ok: 'работает', off: 'выключено', plan: 'план' };
+
+Object.entries(N).forEach(([id, n]) => {
+  const b = document.createElement('button');
+  b.className = `node ${n.pos}${n.plan ? ' plan' : ''}`;
+  b.id = 'n-' + id; b.dataset.id = id; b.dataset.step = n.step; b.type = 'button';
+  b.innerHTML = `<span class="badge ${STATUS[n.status][1]}">${BADGE[n.status]}</span><div class="ico">${n.ico}</div><h3>${n.title}</h3><p>${n.sub}</p>`;
+  b.addEventListener('click', () => select(id, true));
+  grid.appendChild(b);
+});
+
+function neighbors(id) {
+  const s = new Set([id]);
+  E.forEach(e => { if (e[0] === id) s.add(e[3]); if (e[3] === id) s.add(e[0]); });
+  return s;
+}
+
+function select(id, scroll) {
+  const n = N[id], nb = neighbors(id);
+  document.querySelectorAll('.node').forEach(el => { el.classList.toggle('sel', el.dataset.id === id); el.classList.toggle('dim', !nb.has(el.dataset.id)); });
+  draw(id);
+  const [stText, stCls] = STATUS[n.status];
+  const kid = n.kid.map(p => p.startsWith('<ol') || p.startsWith('<ul') ? p : `<p>${p}</p>`).join('');
+  panel.innerHTML = `
+    <h2>${n.ico} ${n.title}</h2>
+    <span class="status ${stCls}">${stText}</span>
+    <h4>Простыми словами</h4><div class="kid">${kid}</div>
+    <div class="only-adult">
+      <h4>Как это устроено</h4><ul>${n.how.map(h => `<li>${h}</li>`).join('')}</ul>
+      ${n.table ? `<table class="t"><tr><th>Ссылка</th><th>Риск</th></tr>${n.table.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>` : ''}
+    </div>
+    <h4>Пример</h4><div class="example">${n.example}</div>
+    <div class="only-adult files"><h4>Где в коде</h4>${n.files.map(f => `<code>${f}</code>`).join(' ')}</div>
+    <h4>Связано с</h4><div class="jump">${n.jump.map(j => `<button type="button" data-j="${j}">${N[j].ico} ${N[j].title}</button>`).join('')}</div>`;
+  panel.querySelectorAll('[data-j]').forEach(b => b.addEventListener('click', () => select(b.dataset.j, true)));
+  panel.scrollTop = 0;
+  if (scroll && window.matchMedia('(max-width: 980px)').matches) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function home() {
+  document.querySelectorAll('.node').forEach(el => el.classList.remove('sel', 'dim'));
+  draw(null);
+  panel.innerHTML = `<h2>Нажми на любой блок</h2>
+    <p class="hint">Слева показан весь путь сообщения. <b>Ядро</b> — это классификатор, «мозг» бота. Остальные блоки помогают ему или управляют им.</p>
+    <h4>Путь сообщения за 5 шагов</h4>
+    <ol class="steps">
+      <li>Сообщение приходит из <b>Telegram</b> или <b>WhatsApp</b>.</li>
+      <li>Бот спрашивает: <b>знакомый или чужой?</b></li>
+      <li>Ядро оценивает текст, а помощники смотрят на <b>ссылки</b> и <b>профиль</b>.</li>
+      <li>Баллы складываются в один <b>итоговый риск</b>.</li>
+      <li><b>Светофор</b> решает: пропустить, предупредить тебя в Telegram или заблокировать.</li>
+    </ol>
+    <p class="hint">Совет: включи «Подробности для взрослых» вверху, чтобы увидеть формулы, числа и файлы кода.</p>
+    <div class="jump"><button type="button" data-j="core">🧠 Начать с ядра</button><button type="button" data-j="wa">💬 Как подключён WhatsApp</button><button type="button" data-j="links">🔗 Как проверяются ссылки</button></div>`;
+  panel.querySelectorAll('[data-j]').forEach(b => b.addEventListener('click', () => select(b.dataset.j, true)));
+}
+
+/* ---------------------------------------------------------------- стрелки (SVG поверх сетки) */
+function anchor(el, side, off, box) {
+  const r = el.getBoundingClientRect();
+  const x = r.left - box.left, y = r.top - box.top;
+  if (side === 't') return [x + r.width * off, y, 0, -1];
+  if (side === 'b') return [x + r.width * off, y + r.height, 0, 1];
+  if (side === 'l') return [x, y + r.height * off, -1, 0];
+  return [x + r.width, y + r.height * off, 1, 0];
+}
+
+function draw(active) {
+  svg.querySelectorAll('.edge, .elabel, .elabel-bg').forEach(e => e.remove());
+  if (window.matchMedia('(max-width: 760px)').matches) return;
+  const box = document.getElementById('diagram').getBoundingClientRect();
+  const frag = [];
+  E.forEach(([a, as, ao, b, bs, bo, label, dash]) => {
+    const A = document.getElementById('n-' + a), B = document.getElementById('n-' + b);
+    let d, loopMid = null;
+    const on = active && (a === active || b === active);
+    if (as === 'loop') {
+      const rb = A.getBoundingClientRect(), rt = B.getBoundingClientRect();
+      const x1 = rb.left - box.left + rb.width / 2, y1 = rb.bottom - box.top;
+      const xr = box.width - 18, y2 = rt.top - box.top + rt.height / 2, x2 = rt.right - box.left;
+      const yb = y1 + 26;
+      d = `M${x1},${y1} V${yb} H${xr} V${y2} H${x2 + 3}`;
+      loopMid = { x: (x1 + xr) / 2, y: yb };  // подпись на нижнем горизонтальном отрезке, чтобы не обрезалась справа
+    } else {
+      const [x1, y1, dx1, dy1] = anchor(A, as, ao, box), [x2, y2, dx2, dy2] = anchor(B, bs, bo, box);
+      const k = Math.max(34, Math.hypot(x2 - x1, y2 - y1) * 0.38);
+      d = `M${x1},${y1} C${x1 + dx1 * k},${y1 + dy1 * k} ${x2 + dx2 * k},${y2 + dy2 * k} ${x2 - dx2 * 3},${y2 - dy2 * 3}`;
+    }
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', d); p.setAttribute('class', 'edge' + (dash ? ' dash' : '') + (on ? ' on' : ''));
+    p.setAttribute('marker-end', on ? 'url(#arrOn)' : 'url(#arr)');
+    svg.appendChild(p);
+    const len = p.getTotalLength();
+    const pt = as === 'loop' ? loopMid : p.getPointAtLength(len * 0.5);
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('class', 'elabel'); t.setAttribute('x', pt.x); t.setAttribute('y', pt.y + 4); t.setAttribute('text-anchor', 'middle'); t.textContent = label;
+    svg.appendChild(t);
+    const bb = t.getBBox(), bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('class', 'elabel-bg' + (on ? ' on' : '')); bg.setAttribute('rx', 8);
+    bg.setAttribute('x', bb.x - 6); bg.setAttribute('y', bb.y - 2); bg.setAttribute('width', bb.width + 12); bg.setAttribute('height', bb.height + 4);
+    svg.insertBefore(bg, t);
+  });
+}
+
+let current = null;
+const _select = select;
+select = function (id, s) { current = id; _select(id, s); };
+let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => draw(current), 120); });
+document.getElementById('adult').addEventListener('change', e => document.body.classList.toggle('adult', e.target.checked));
+document.fonts && document.fonts.ready.then(() => draw(current));
+home(); draw(null);
+const q = location.hash.slice(1); if (N[q]) select(q, false);
+</script>
+</body>
+</html>

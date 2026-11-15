@@ -1,0 +1,16 @@
+.git
+.env
+state
+*.db
+*.session
+*.session-journal
+model.joblib
+__pycache__
+*.pyc
+video
+README.md
+video_script.md
+state.db*
+*.moved-to-server
+*.bak
+web

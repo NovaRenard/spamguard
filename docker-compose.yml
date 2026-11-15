@@ -1,0 +1,57 @@
+services:
+  spamguard:
+    build: .
+    container_name: spamguard
+    restart: unless-stopped
+    env_file: .env            # BOT_TOKEN, API_ID, API_HASH, SESSION_KEY, ADMIN_IDS, EVOLUTION_*, WA_* ...
+    volumes:
+      - ./state:/data         # state.db: зашифрованные сессии, доверенные чаты, статистика
+    mem_limit: 768m
+    cpus: 0.5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # портов не публикуем: бот ходит наружу (Telegram long polling) и принимает вебхуки Evolution по внутренней сети
+
+  # ---- WhatsApp: Evolution API (Baileys) + собственные Postgres и Redis. Всё во внутренней сети, порты наружу не открыты.
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: sg-evolution
+    restart: unless-stopped
+    env_file: evolution.env
+    depends_on:
+      - evolution-postgres
+      - evolution-redis
+    volumes:
+      - evolution_instances:/evolution/instances
+    mem_limit: 1536m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  evolution-postgres:
+    image: postgres:16-alpine
+    container_name: sg-evolution-pg
+    restart: unless-stopped
+    env_file: evolution.env   # POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
+    volumes:
+      - evolution_pg:/var/lib/postgresql/data
+    mem_limit: 512m
+
+  evolution-redis:
+    image: redis:7-alpine
+    container_name: sg-evolution-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - evolution_redis:/data
+    mem_limit: 256m
+
+volumes:
+  evolution_instances:
+  evolution_pg:
+  evolution_redis:
