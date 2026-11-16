@@ -1,4 +1,4 @@
-# SpamGuard: сайт с аналитикой (Vercel и Telegram Mini App)
+# AntiLudo Guard: сайт с аналитикой (Vercel и Telegram Mini App)
 
 Страница с графиками: **«Мой обзор»** для каждого пользователя и **«Админ»** с общей статистикой и итогами.
 Без сборки и зависимостей: `public/index.html` (графики на чистом SVG) и две функции Vercel в `api/`.

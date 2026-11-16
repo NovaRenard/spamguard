@@ -185,7 +185,7 @@ class LinkChecker:
 
     async def _session_get(self) -> aiohttp.ClientSession:
         if self._session is None:
-            self._session = aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0 (SpamGuard link checker)"})
+            self._session = aiohttp.ClientSession(headers={"User-Agent": "Mozilla/5.0 (AntiLudo Guard link checker)"})
         return self._session
 
     async def refresh_lists(self) -> None:

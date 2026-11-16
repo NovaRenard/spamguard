@@ -20,4 +20,4 @@ http.createServer((req, res) => {
     if (err) { res.statusCode = 404; return res.end('not found'); }
     res.setHeader('Content-Type', TYPES[path.extname(file)] || 'application/octet-stream'); res.end(buf);
   });
-}).listen(process.env.PORT || 3000, '127.0.0.1', () => console.log(`SpamGuard web: http://localhost:${process.env.PORT || 3000}/?demo=1`));
+}).listen(process.env.PORT || 3000, '127.0.0.1', () => console.log(`AntiLudo Guard web: http://localhost:${process.env.PORT || 3000}/?demo=1`));

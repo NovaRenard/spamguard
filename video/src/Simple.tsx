@@ -146,7 +146,7 @@ const Title: React.FC = () => {
       style={{background: C.bg, alignItems: 'center', justifyContent: 'center', fontFamily: FONT, color: C.text, opacity: o}}
     >
       <div style={{fontSize: 190, transform: `scale(${0.6 + 0.4 * s})`}}>🛡</div>
-      <div style={{fontSize: 108, fontWeight: 800, marginTop: 10}}>SpamGuard</div>
+      <div style={{fontSize: 108, fontWeight: 800, marginTop: 10}}>AntiLudo Guard</div>
       <div style={{fontSize: 44, color: C.accent, marginTop: 14}}>Как это работает под капотом</div>
     </AbsoluteFill>
   );
@@ -500,7 +500,7 @@ const Outro: React.FC = () => {
       style={{background: C.bg, alignItems: 'center', justifyContent: 'center', fontFamily: FONT, color: C.text, opacity: o}}
     >
       <div style={{fontSize: 130}}>🛡</div>
-      <div style={{fontSize: 90, fontWeight: 800}}>SpamGuard</div>
+      <div style={{fontSize: 90, fontWeight: 800}}>AntiLudo Guard</div>
       <div style={{fontSize: 42, color: C.muted, marginTop: 14, fontFamily: MONO}}>сначала смотрит, потом защищает</div>
     </AbsoluteFill>
   );

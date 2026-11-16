@@ -607,7 +607,7 @@ async def request_access(m: Message) -> None:
         try:
             await bot.send_message(
                 admin,
-                f"🔔 Запрос доступа к SpamGuard\n{name}{defang(uname)} (id {uid})\n\n"
+                f"🔔 Запрос доступа к AntiLudo Guard\n{name}{defang(uname)} (id {uid})\n\n"
                 "Одобрение позволит этому человеку подключить свой аккаунт: бот сможет читать его чаты.",
                 reply_markup=kb,
             )
