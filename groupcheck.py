@@ -24,12 +24,14 @@ def _noisy_or(ps: list[float]) -> float:
     return 1 - out
 
 
-def _short_text_signal(guard: SpamGuard, text: str, min_risk: float) -> tuple[float, str | None]:
+def _short_text_signal(guard: SpamGuard, text: str, min_risk: float, owner: int | None = None) -> tuple[float, str | None]:
     """Для коротких текстов (название, описание): модель на них теряется, поэтому верим только явному не-ok классу."""
     if not text or not text.strip():
         return 0.0, None
     r_rule, lab_rule, _ = rule_score(normalize(text))
-    res = guard.predict(text)
+    if guard.is_allowed(normalize(text), owner):
+        return 0.0, None  # владелец уже отмечал такое как «не спам»
+    res = guard.predict(text, owner=owner)
     model_risk = res["risk"] if (res["label"] != "ok" and res["risk"] >= min_risk) else 0.0
     if r_rule >= model_risk and r_rule > 0:
         return r_rule, lab_rule
@@ -38,20 +40,23 @@ def _short_text_signal(guard: SpamGuard, text: str, min_risk: float) -> tuple[fl
     return 0.0, None
 
 
-def score_chat(title: str, username: str | None, about: str, texts: list[str], guard: SpamGuard) -> dict:
-    """Возвращает {risk, label, reasons, flagged, checked}."""
+def score_chat(title: str, username: str | None, about: str, texts: list[str], guard: SpamGuard, owner: int | None = None) -> dict:
+    """Возвращает {risk, label, reasons, flagged, checked, samples}. samples — тексты, из-за которых заподозрили (для дообучения по кнопке «не спам»)."""
+    samples: list[str] = []
     reasons: list[str] = []
     labels: Counter = Counter()
     parts: list[float] = []
 
-    t_risk, t_lab = _short_text_signal(guard, f"{title} {username or ''}", min_risk=0.8)
+    t_risk, t_lab = _short_text_signal(guard, f"{title} {username or ''}", min_risk=0.8, owner=owner)
     if t_risk > 0:
+        samples.append(f"{title} {username or ''}".strip())
         parts.append(0.8 * t_risk)
         labels[t_lab] += 1
         reasons.append(f"название/@username: {t_lab}")
 
-    a_risk, a_lab = _short_text_signal(guard, about, min_risk=0.7)
+    a_risk, a_lab = _short_text_signal(guard, about, min_risk=0.7, owner=owner)
     if a_risk > 0:
+        samples.append(about)
         parts.append(0.85 * a_risk)
         labels[a_lab] += 1
         reasons.append(f"описание: {a_lab}")
@@ -59,9 +64,11 @@ def score_chat(title: str, username: str | None, about: str, texts: list[str], g
     considered = [t for t in texts if t and len(t.strip()) >= MIN_MSG_LEN]
     flagged = 0
     for t in considered:
-        res = guard.predict(t)
+        res = guard.predict(t, owner=owner)
         if res["label"] != "ok" and res["risk"] >= 0.6:
             flagged += 1
+            if len(samples) < 8:
+                samples.append(t)
             labels[res["label"]] += 1
     if considered and flagged >= 3:
         share = flagged / len(considered)
@@ -74,10 +81,10 @@ def score_chat(title: str, username: str | None, about: str, texts: list[str], g
 
     risk = _noisy_or(parts)
     label = labels.most_common(1)[0][0] if labels else "ok"
-    return {"risk": risk, "label": label, "reasons": reasons, "flagged": flagged, "checked": len(considered)}
+    return {"risk": risk, "label": label, "reasons": reasons, "flagged": flagged, "checked": len(considered), "samples": samples}
 
 
-async def analyze_chat(client, ent, guard: SpamGuard, limit: int = 25) -> dict:
+async def analyze_chat(client, ent, guard: SpamGuard, limit: int = 25, owner: int | None = None) -> dict:
     """Достаёт данные из Telegram и оценивает. Побочных действий (выход) здесь нет."""
     from telethon import functions
     from telethon.tl.types import Channel
@@ -99,6 +106,6 @@ async def analyze_chat(client, ent, guard: SpamGuard, limit: int = 25) -> dict:
         texts = [m.message for m in msgs if getattr(m, "message", None)]
     except Exception:
         pass
-    res = score_chat(title, username, about, texts, guard)
+    res = score_chat(title, username, about, texts, guard, owner=owner)
     res.update(title=title, username=username, kind="канал" if getattr(ent, "broadcast", False) else "группа")
     return res

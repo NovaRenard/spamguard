@@ -13,7 +13,7 @@ import logging
 import os
 import sqlite3
 import time
-from collections import deque
+from collections import OrderedDict, deque
 from pathlib import Path
 
 import qrcode
@@ -28,6 +28,7 @@ from telethon.tl.types import Channel, Chat
 from telethon.sessions import StringSession
 
 from classifier import SpamGuard
+from feedback import Feedback
 from groupcheck import analyze_chat
 import analytics
 from links import LinkChecker
@@ -56,6 +57,11 @@ ALLOWED = {int(x) for x in os.environ.get("ALLOWED_IDS", "").replace(" ", "").sp
 # Администраторы: им приходят заявки на доступ с кнопками «Одобрить / Отклонить»
 ADMIN_IDS = {int(x) for x in os.environ.get("ADMIN_IDS", "").replace(" ", "").split(",") if x}
 MAX_ACCESS_REQUESTS_PER_HOUR = int(os.environ.get("MAX_ACCESS_REQUESTS_PER_HOUR", 5))
+# Открытый доступ: пользоваться может каждый, одобрение не нужно (OPEN_ACCESS=0 вернёт заявки). Закрыть доступ конкретному человеку: /revoke
+OPEN_ACCESS = os.environ.get("OPEN_ACCESS", "1") == "1"
+# Дообучение: отметка «Это не спам» сразу действует для самого пользователя, а в общую модель попадает после подтверждения
+# администратором или этим числом разных пользователей (защита от «отравления» модели)
+FEEDBACK_MIN_USERS = int(os.environ.get("FEEDBACK_MIN_USERS", 2))
 WARN_AT = float(os.environ.get("WARN_AT", 0.5))
 BLOCK_AT = float(os.environ.get("BLOCK_AT", 0.85))
 MAX_BLOCKS_PER_HOUR = int(os.environ.get("MAX_BLOCKS_PER_HOUR", 5))
@@ -120,6 +126,21 @@ for _col in ("domains TEXT",):  # аналитика: домены опасны�
         db.commit()
     except sqlite3.OperationalError:
         pass
+try:
+    db.execute("ALTER TABLE access ADD COLUMN last_seen REAL")
+    db.commit()
+except sqlite3.OperationalError:
+    pass
+feedback = Feedback(db, guard, ADMIN_IDS, min_users=FEEDBACK_MIN_USERS)
+feedback.load()  # «память» об отметках «Это не спам» переживает перезапуск
+
+
+def learn_texts(owner_id: int, texts: list[str], source: str) -> int:
+    """Сохраняет отметки «Это не спам» и запускает дообучение в фоне. Возвращает число новых примеров."""
+    n = feedback.add(owner_id, texts, source)
+    if n:
+        asyncio.get_running_loop().create_task(feedback.retrain_if_needed())
+    return n
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
 
@@ -139,6 +160,7 @@ if os.environ.get("EVOLUTION_API_KEY"):
         max_blocks_per_hour=MAX_BLOCKS_PER_HOUR, max_leaves_per_hour=MAX_LEAVES_PER_HOUR,
         recheck_days=GROUP_RECHECK_DAYS,
         links=linkchk, link_warn_known=LINK_WARN_KNOWN,
+        learn=learn_texts,
     )
 monitors: dict[int, "Monitor"] = {}
 connecting: set[int] = set()
@@ -177,6 +199,7 @@ class Monitor:
         self.scanning = False
         self.group_sem = asyncio.Semaphore(1)
         self.test_mode = False  # /testmode; после перезапуска всегда выключен
+        self.flagged: OrderedDict[int, list[str]] = OrderedDict()  # чат -> тексты, из-за которых подняли тревогу (только в памяти)
         self.stats = {"checked": 0, "warned": 0, "blocked": 0}
         client.add_event_handler(self.on_outgoing, events.NewMessage(outgoing=True))
         client.add_event_handler(self.on_incoming, events.NewMessage(incoming=True))
@@ -216,12 +239,20 @@ class Monitor:
             self.block_times.popleft()
         return len(self.block_times) >= MAX_BLOCKS_PER_HOUR
 
-    async def notify(self, text: str, chat_id: int | None = None, markup=None) -> None:
+    def remember(self, chat_id: int, texts: list[str]) -> None:
+        """Запоминаем в памяти (не в базе), из-за чего тревога: если владелец нажмёт «Это не спам», на этом дообучимся."""
+        self.flagged[chat_id] = [t for t in texts if t][:8]
+        self.flagged.move_to_end(chat_id)
+        while len(self.flagged) > 200:
+            self.flagged.popitem(last=False)
+
+    async def notify(self, text: str, chat_id: int | None = None, markup=None, hidden: bool = False) -> None:
         kb = markup
         if markup is None and chat_id is not None:
-            kb = InlineKeyboardMarkup(
-                inline_keyboard=[[InlineKeyboardButton(text="✅ Это не спам, доверять", callback_data=f"trust:{chat_id}")]]
-            )
+            row = [InlineKeyboardButton(text="✅ Это не спам, доверять", callback_data=f"trust:{chat_id}")]
+            if hidden:
+                row.append(InlineKeyboardButton(text="👁 Показать текст", callback_data=f"show:{chat_id}"))
+            kb = InlineKeyboardMarkup(inline_keyboard=[row])
         await bot.send_message(self.owner_id, text, reply_markup=kb)
 
     # ---------------- группы и каналы
@@ -290,9 +321,10 @@ class Monitor:
         except Exception:
             pass
 
-        res = await analyze_chat(self.client, ent, guard)
+        res = await analyze_chat(self.client, ent, guard, owner=self.owner_id)
         risk, label = res["risk"], res["label"]
         self.mark_checked(chat_id, label, risk)
+        self.remember(chat_id, res.get("samples", []))
         if risk < GROUP_WARN_AT:
             self.record_chat(chat_id, label, risk, "group_ok", res["reasons"])
             return {"action": "group_ok", "risk": risk}
@@ -419,7 +451,7 @@ class Monitor:
         q.append(now)
         burst = sum(1 for t in q if now - t <= 60)
 
-        res = guard.predict(e.raw_text)
+        res = guard.predict(e.raw_text, owner=self.owner_id)
         lk = await linkchk.check_text(e.raw_text, urls) if linkchk else None
         doms = [r.host for r in lk.results if r.risk >= 0.3] if lk else []
         if lk and lk.risk > 0:  # ссылки — независимое свидетельство, усиливают оценку текста
@@ -453,18 +485,21 @@ class Monitor:
         name = getattr(sender, "first_name", None) or "?"
         uname = f" @{sender.username}" if getattr(sender, "username", None) else ""
         head = f"{name}{defang(uname)} (id {e.sender_id})"
-        quote = f"«{defang(e.raw_text[:200])}»"
+        # Цель сервиса: меньше азартной рекламы перед глазами. Текст такой рекламы в уведомлении скрыт (можно показать кнопкой).
+        hide = label == "gambling"
+        quote = "🙈 Текст азартной рекламы скрыт, чтобы не провоцировать." if hide else f"«{defang(e.raw_text[:200])}»"
+        self.remember(e.chat_id, [e.raw_text])
 
         if risk < BLOCK_AT:
             self.stats["warned"] += 1
             self.record(e, label, res["risk"], p_risk, risk, "warned", p_reasons, domains=doms)
-            await self.notify(f"⚠️ Подозрительное сообщение от {head}: {reason}, риск {risk:.0%}.{prof_line}\n{quote}\nНе заблокирован.", e.chat_id)
+            await self.notify(f"⚠️ Подозрительное сообщение от {head}: {reason}, риск {risk:.0%}.{prof_line}\n{quote}\nНе заблокирован.", e.chat_id, hidden=hide)
             return
         if self.dry_run or self.rate_limited():
             why = "режим «только уведомления», включить блокировку: /live" if self.dry_run else "лимит блокировок в час"
             self.stats["warned"] += 1
             self.record(e, label, res["risk"], p_risk, risk, "would_block", p_reasons, domains=doms)
-            await self.notify(f"🛡 Был бы заблокирован ({why}): {head} — {reason}, риск {risk:.0%}.{prof_line}\n{quote}", e.chat_id)
+            await self.notify(f"🛡 Был бы заблокирован ({why}): {head} — {reason}, риск {risk:.0%}.{prof_line}\n{quote}", e.chat_id, hidden=hide)
             return
 
         self.block_times.append(time.time())
@@ -484,13 +519,14 @@ class Monitor:
                 log.warning("delete_dialog failed: %s", ex)
         except Exception as ex:
             self.record(e, label, res["risk"], p_risk, risk, "block_failed", p_reasons, domains=doms)
-            await self.notify(f"❌ Не удалось заблокировать {head}: {ex}\n{quote}", e.chat_id)
+            await self.notify(f"❌ Не удалось заблокировать {head}: {ex}\n{quote}", e.chat_id, hidden=hide)
             return
         self.stats["blocked"] += 1
         self.record(e, label, res["risk"], p_risk, risk, "blocked", p_reasons, domains=doms)
         await self.notify(
             f"🛡 Защита: {head} заблокирован — {reason} (риск {risk:.0%}).{prof_line}\nСделано: {', '.join(done)}.\n{quote}",
             e.chat_id,
+            hidden=hide,
         )
 
 
@@ -501,7 +537,30 @@ def allowed_ids() -> set[int]:
 
 
 def allowed(uid: int) -> bool:
-    return uid in allowed_ids()
+    """Открытый доступ: можно всем, кроме тех, кому администратор закрыл доступ (/revoke). OPEN_ACCESS=0: только одобренные."""
+    if uid in ALLOWED or uid in ADMIN_IDS:
+        return True
+    row = db.execute("SELECT status FROM access WHERE user_id=?", (uid,)).fetchone()
+    status = row[0] if row else None
+    if status in ("revoked", "rejected"):
+        return False
+    return OPEN_ACCESS or status == "approved"
+
+
+def touch_user(u) -> None:
+    """Запоминаем, кто пользуется ботом (имя, @username, id), чтобы администратор видел всех в панели. Тексты не сохраняются."""
+    now = time.time()
+    status = "approved" if (OPEN_ACCESS or u.id in ALLOWED or u.id in ADMIN_IDS) else None
+    row = db.execute("SELECT status FROM access WHERE user_id=?", (u.id,)).fetchone()
+    if row is None:
+        if status is None:
+            return
+        db.execute("INSERT INTO access(user_id, status, name, username, ts, last_seen) VALUES (?,?,?,?,?,?)",
+                   (u.id, status, u.full_name or "", u.username or "", now, now))
+    else:
+        db.execute("UPDATE access SET name=?, username=?, last_seen=?, status=CASE WHEN status IN ('pending') AND ? IS NOT NULL THEN ? ELSE status END WHERE user_id=?",
+                   (u.full_name or "", u.username or "", now, status, status, u.id))
+    db.commit()
 
 
 access_requests: deque[float] = deque()
@@ -573,7 +632,9 @@ QR_CAPTION = (
     "Отсканируйте этот QR в Telegram на ДРУГОМ устройстве, где вы уже вошли:\n"
     "Настройки → Устройства → Подключить устройство.\n"
     "Код обновляется каждые ~30 секунд. Бот получит доступ к чтению ваших чатов; "
-    "отключить можно в любой момент: /stop или Настройки → Устройства."
+    "отключить можно в любой момент: /stop или Настройки → Устройства.\n\n"
+    "Что видит администратор сервиса: ваше имя, @username, id, подключены ли Telegram/WhatsApp, режимы и цифры "
+    "(сколько проверено и помечено). Тексты ваших сообщений и переписку он не видит."
 )
 
 
@@ -593,6 +654,7 @@ async def cmd_start(m: Message):
     if not allowed(uid):
         await request_access(m)
         return
+    touch_user(m.from_user)
     if uid in monitors:
         await m.answer("Уже подключено ✅ Статус: /status")
         return
@@ -638,7 +700,10 @@ async def cmd_start(m: Message):
             f"✅ Успешное подключение: {me.first_name}.\n"
             "🔍 Анализ запущен — проверяю сообщения от новых собеседников (не из контактов, которым вы не писали).\n\n"
             "Сейчас режим «только уведомления»: бот никого не блокирует. Через пару дней, убедившись, что ложных "
-            "срабатываний нет, включите блокировку командой /live."
+            "срабатываний нет, включите блокировку командой /live.\n\n"
+            "Цель сервиса: чтобы вы видели как можно меньше азартной рекламы. Текст такой рекламы я в уведомлениях скрываю. "
+            "Если вы уже сталкивались с азартными играми и хотите максимальной защиты, включите /strict.\n"
+            "Если я ошибся, нажмите «✅ Это не спам»: я запомню и стану точнее."
         )
     except Exception as ex:
         log.exception("connect failed")
@@ -679,6 +744,36 @@ async def cmd_live(m: Message):
 @dp.message(Command("dry"))
 async def cmd_dry(m: Message):
     await set_mode(m, True)
+
+
+@dp.message(Command("strict"))
+async def cmd_strict(m: Message):
+    """Защитный режим для тех, кто уже сталкивался с азартными играми: блокировка + автовыход из гемблинг-групп."""
+    mon = monitors.get(m.from_user.id)
+    if not mon:
+        await m.answer("Не подключено. /start")
+        return
+    mon.dry_run = False
+    mon.group_leave = True
+    db.execute("UPDATE users SET dry_run=0, group_leave=1 WHERE owner_id=?", (mon.owner_id,))
+    db.commit()
+    await m.answer(
+        "🛡 Защитный режим включён: блокирую спамеров и казино-боты, выхожу из групп и каналов про азартные игры, "
+        "текст такой рекламы в уведомлениях скрыт. Чтобы сразу очистить аккаунт, запустите /scan.\n"
+        "Смягчить: /dry (только уведомления) и /groupleave (выключить автовыход).\n"
+        "Если тяга к играм мешает жить, поговорите с близкими или обратитесь к специалисту: это лечится, вы не один."
+    )
+
+
+@dp.message(Command("allow"), lambda m: m.from_user.id in ADMIN_IDS)
+async def cmd_allow(m: Message):
+    parts = (m.text or "").split()
+    if len(parts) != 2 or not parts[1].lstrip("-").isdigit():
+        await m.answer("Использование: /allow <id> (вернуть доступ, закрытый через /revoke)")
+        return
+    db.execute("UPDATE access SET status='approved' WHERE user_id=?", (int(parts[1]),))
+    db.commit()
+    await m.answer(f"✅ Доступ для {parts[1]} возвращён.")
 
 
 @dp.message(Command("stats"))
@@ -755,13 +850,21 @@ async def on_access_decision(q: CallbackQuery):
 
 @dp.message(Command("users"), lambda m: m.from_user.id in ADMIN_IDS)
 async def cmd_users(m: Message):
-    rows = db.execute("SELECT user_id, status, name, username FROM access ORDER BY ts DESC LIMIT 30").fetchall()
-    lines = [f"Постоянные (.env): {', '.join(map(str, sorted(ALLOWED | ADMIN_IDS))) or 'нет'}"]
-    for uid, status, name, uname in rows:
+    rows = db.execute("SELECT user_id, status, name, username, ts, last_seen FROM access ORDER BY COALESCE(last_seen, ts) DESC LIMIT 50").fetchall()
+    lines = [f"Всего пользователей: {len(rows)} · открытый доступ: {'да' if OPEN_ACCESS else 'нет'}",
+             f"Постоянные (.env): {', '.join(map(str, sorted(ALLOWED | ADMIN_IDS))) or 'нет'}"]
+    for uid, status, name, uname, ts, seen in rows:
         mark = {"approved": "✅", "pending": "⏳", "rejected": "❌", "revoked": "🚫"}.get(status, "•")
-        conn = " · подключён" if uid in monitors else ""
-        lines.append(f"{mark} {name}{' @' + uname if uname else ''} (id {uid}) — {status}{conn}")
-    lines.append("Отозвать доступ: /revoke <id>")
+        mon = monitors.get(uid)
+        conn = " · TG" if mon else ""
+        conn += " · WA" if wa and wa.row(uid) else ""
+        mode = (" · блок." if not mon.dry_run else " · уведомл.") if mon else ""
+        n30 = db.execute("SELECT COUNT(*), SUM(action IN ('warned','would_block','blocked','false_positive')) FROM events WHERE owner_id=? AND ts>=? AND action NOT LIKE 'group_%' AND action NOT IN ('test','known_link')",
+                         (uid, time.time() - 30 * 86400)).fetchone()
+        lines.append(f"{mark} {name}{' @' + uname if uname else ''} (id {uid}){conn}{mode} · 30 дн.: проверено {n30[0] or 0}, помечено {n30[1] or 0}")
+    fs = feedback.stats()
+    lines.append(f"Дообучение: отметок «не спам» {fs['marks']} от {fs['owners']} польз., в общей модели {fs['promoted']}, версия модели {fs['model_version']}")
+    lines.append("Закрыть доступ: /revoke <id> · вернуть: /allow <id> · полная панель: /report → «Админ»")
     await m.answer(defang("\n".join(lines)))
 
 
@@ -830,6 +933,7 @@ async def cmd_report(m: Message):
     if not allowed(uid):
         await request_access(m)
         return
+    touch_user(m.from_user)
     if not ANALYTICS_ON:
         await m.answer("Отчёты на сайте не настроены на этом сервере.")
         return
@@ -855,6 +959,7 @@ async def _wa_ready(m: Message) -> bool:
     if not allowed(m.from_user.id):
         await request_access(m)
         return False
+    touch_user(m.from_user)
     return True
 
 
@@ -978,6 +1083,7 @@ async def cmd_stop(m: Message):
     db.execute("DELETE FROM users WHERE owner_id=?", (uid,))
     db.execute("DELETE FROM trusted WHERE owner_id=?", (uid,))
     db.commit()
+    feedback.forget(uid)  # тексты, которые вы отмечали «не спам», тоже стираются
     if wa:
         await wa.stop(uid)  # заодно отключаем WhatsApp, если был подключён
     await m.answer("Отключено. Сессия завершена, данные удалены.")
@@ -997,7 +1103,7 @@ async def on_password(m: Message):
 @dp.message(F.text, lambda m: allowed(m.from_user.id) and not m.text.startswith("/"))
 async def on_test_text(m: Message):
     """Проверка без второго аккаунта: пришлите (или перешлите) боту любой текст — он покажет вердикт."""
-    res = guard.predict(m.text)
+    res = guard.predict(m.text, owner=m.from_user.id)
     verdict = (
         "🚫 заблокировал бы" if res["risk"] >= BLOCK_AT
         else "⚠️ предупредил бы" if res["risk"] >= WARN_AT
@@ -1019,12 +1125,13 @@ async def on_group_trust(q: CallbackQuery):
     chat_id = int(q.data.split(":")[1])
     mon.trust(chat_id)
     mon.mark_checked(chat_id, "trusted", 0.0)
+    learned = learn_from_button(mon, chat_id, "group")
     db.execute(
         "UPDATE events SET action='group_false_positive' WHERE id=(SELECT MAX(id) FROM events WHERE owner_id=? AND chat_id=? AND action LIKE 'group_%')",
         (mon.owner_id, chat_id),
     )
     db.commit()
-    await q.answer("Больше не проверяю эту группу")
+    await q.answer("Больше не проверяю эту группу" + (". Запомнил, учусь на этом" if learned else ""))
     await q.message.edit_reply_markup(reply_markup=None)
 
 
@@ -1044,6 +1151,18 @@ async def on_group_leave(q: CallbackQuery):
     await q.message.edit_reply_markup(reply_markup=None)
 
 
+def learn_from_button(mon: "Monitor", chat_id: int, source: str) -> bool:
+    """Отметка «Это не спам»: запоминаем текст и дообучаем модель в фоне."""
+    return bool(learn_texts(mon.owner_id, mon.flagged.pop(chat_id, []), source))
+
+
+@dp.callback_query(F.data.startswith("show:"))
+async def on_show(q: CallbackQuery):
+    mon = monitors.get(q.from_user.id)
+    texts = mon.flagged.get(int(q.data.split(":")[1]), []) if mon else []
+    await q.answer(defang(texts[0][:190]) if texts else "Текст уже не сохранён", show_alert=True)
+
+
 @dp.callback_query(F.data.startswith("trust:"))
 async def on_trust(q: CallbackQuery):
     mon = monitors.get(q.from_user.id)
@@ -1052,6 +1171,7 @@ async def on_trust(q: CallbackQuery):
         return
     chat_id = int(q.data.split(":")[1])
     mon.trust(chat_id)
+    learned = learn_from_button(mon, chat_id, "chat")
     db.execute(
         "UPDATE events SET action='false_positive' WHERE id=(SELECT MAX(id) FROM events WHERE owner_id=? AND chat_id=? AND action IN ('warned','would_block','blocked'))",
         (mon.owner_id, chat_id),
@@ -1059,7 +1179,7 @@ async def on_trust(q: CallbackQuery):
     db.commit()
     try:
         await mon.client(functions.contacts.UnblockRequest(id=await mon.client.get_input_entity(chat_id)))
-        await q.answer("Добавлено в доверенные и разблокировано")
+        await q.answer("Добавлено в доверенные и разблокировано" + (". Запомнил, учусь на этом" if learned else ""))
     except Exception:
         await q.answer("Добавлено в доверенные (разблокируйте вручную, если был блок)")
     await q.message.edit_reply_markup(reply_markup=None)
@@ -1088,6 +1208,8 @@ async def restore() -> None:
 async def main() -> None:
     logging.basicConfig(level=logging.INFO)
     await restore()
+    if feedback.promoted():  # подтверждённые отметки есть: подтягиваем их в модель при старте
+        asyncio.create_task(feedback.retrain_if_needed(force=True))
     asyncio.create_task(analytics_loop())
     if linkchk:
         asyncio.create_task(linkchk.refresh_loop())  # загрузка и ежедневное обновление списков

@@ -110,8 +110,13 @@ check("режимы: блокировка у A (dry_run=0) и C в WhatsApp; у 
 check("служебные данные (возраст списков) переданы", g["infra"].get("lists_age_h") == 3.5)
 
 print("\n[Приватность]")
+public = json.dumps({k: v for k, v in snap.items() if k != "admin"}, ensure_ascii=False)  # то, что видит обычный пользователь/график
 dump = json.dumps(snap, ensure_ascii=False)
-check("реальные ID владельцев отсутствуют в снимке", not any(str(x) in dump for x in (A, B, C)))
+check("реальные ID владельцев только в разделе admin (для админа), не в общих данных", not any(str(x) in public for x in (A, B, C)) and all(str(x) in json.dumps(snap["admin"]) for x in (A, B, C)))
+dr = {d["id"]: d for d in snap["admin"]["directory"]}
+check("справочник админа: все пользователи, у каждого имя/статус/режимы/цифры", set(dr) >= {A, B, C} and all({"name", "username", "status", "tg", "wa", "checked30", "flagged30", "gambling30", "last_seen"} <= set(d) for d in dr.values()))
+check("справочник согласован с графиками (псевдоним ведёт на users[p]); без активности — только запись справочника", all(d["p"] in snap["users"] for d in dr.values() if d["id"] != 999) and dr[999]["status"] == "pending")
+check("в справочнике нет текстов сообщений и ID собеседников", not any(str(x) in json.dumps(snap["admin"]) for x in (SEND1, SEND2)))
 check("ID собеседников отсутствуют в снимке", not any(str(x) in dump for x in (SEND1, SEND2)))
 check("JID WhatsApp и названия групп отсутствуют", "@s.whatsapp.net" not in dump and "@g.us" not in dump)
 check("псевдонимы стабильны и зависят от ключа", analytics.pseudo(KEY, A) == pa and analytics.pseudo("other-key", A) != pa and len(pa) == 16)

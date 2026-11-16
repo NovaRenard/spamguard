@@ -45,6 +45,7 @@ const day = (i) => ({ date: `2026-11-${10 + i}`, checked: 5, flagged: 2, blocked
 const snap = {
   v: 1, generated_at: 1700000000, tz: 5, days: ['2026-11-10', '2026-11-11'],
   global: { daily: [day(0), day(1)], top: { 30: { domains: [['1win-bonus.com', 3, 'gambling']] } }, accounts: { users: 3 }, table: [{ p: PA }, { p: PB }] },
+  admin: { directory: [{ p: PA, id: 111, name: 'Алия', username: 'aliya', status: 'approved' }, { p: PB, id: 222, name: 'Бек', username: '', status: 'approved' }] },
   users: { [PA]: { daily: [day(0), day(1)], connected: { tg: true, wa: false } }, [PB]: { daily: [day(0)], connected: { tg: true, wa: false } }, [PADMIN]: { daily: [day(1)], connected: { tg: true, wa: false } } },
 };
 
@@ -88,6 +89,16 @@ const snap = {
   check('токен можно передать в адресе (?t=)', r.status === 200);
   r = await call(data, { headers: { 'x-token': mkToken('site-secret', PA, 'admin') } });
   check('админ: видит общую статистику', r.status === 200 && r.json.global && r.json.global.accounts.users === 3);
+  r = await call(data, { headers: { 'x-token': mkToken('site-secret', PA, 'user') } });
+  check('пользователь: справочник и чужие данные недоступны', r.json.admin === undefined && r.json.user === undefined && !r.raw.includes('Алия') && !r.raw.includes('Бек'));
+  r = await call(data, { url: `/api/data?u=${PB}`, headers: { 'x-token': mkToken('site-secret', PA, 'user') } });
+  check('пользователь: ?u= не открывает чужие данные', r.status === 200 && r.json.user === undefined && !r.raw.includes('Бек'));
+  r = await call(data, { headers: { 'x-token': mkToken('site-secret', PA, 'admin') } });
+  check('админ: видит справочник всех пользователей (имя, @username, id, статус)', r.json.admin.directory.length === 2 && r.json.admin.directory[0].name === 'Алия' && r.json.admin.directory[1].id === 222);
+  r = await call(data, { url: `/api/data?u=${PB}`, headers: { 'x-token': mkToken('site-secret', PA, 'admin') } });
+  check('админ: ?u= открывает подробности выбранного пользователя', r.json.user && r.json.user.daily.length === 1 && r.json.userp === PB);
+  r = await call(data, { url: '/api/data?u=nobody', headers: { 'x-token': mkToken('site-secret', PA, 'admin') } });
+  check('админ: неизвестный ?u= не ломает ответ', r.status === 200 && r.json.user === undefined);
   r = await call(data, { headers: { 'x-token': mkToken('site-secret', 'unknownpseudo0001', 'user') } });
   check('неизвестный пользователь: пустые данные, не ошибка', r.status === 200 && r.json.me === null);
   r = await call(data, { headers: { 'x-tg-init-data': mkInitData(process.env.BOT_TOKEN, { id: 111 }) } });
