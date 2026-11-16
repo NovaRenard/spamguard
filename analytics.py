@@ -1,8 +1,9 @@
 """Аналитика для сайта (Vercel / Telegram Mini App).
 
-Что покидает сервер: ТОЛЬКО агрегаты (счётчики по дням, топы категорий и доменов).
-Что НЕ покидает: тексты сообщений, имена, телефоны, реальные Telegram ID, ID собеседников.
-Пользователи на сайте обозначены псевдонимом p = HMAC(PSEUDO_KEY, user_id) (первые 16 hex-символов).
+Что покидает сервер: агрегаты (счётчики по дням, топы категорий и доменов) и «справочник» пользователей для АДМИНА
+(snapshot["admin"]: имя, @username, id, статус, режимы, цифры): API отдаёт его только владельцу роли admin.
+Что НЕ покидает: тексты сообщений, телефоны, ID и имена собеседников (тех, кто писал пользователям).
+Обычный пользователь видит только свои цифры; он обозначен псевдонимом p = HMAC(PSEUDO_KEY, user_id) (первые 16 hex-символов).
 
 Доступ к сайту: бот по /report выдаёт подписанную ссылку (HMAC-токен с псевдонимом, ролью и сроком жизни).
 Сайт проверяет подпись тем же секретом; без валидного токена данных не показывает.
@@ -194,6 +195,35 @@ def build_snapshot(db: sqlite3.Connection, *, pseudo_key: str, tz_hours: float =
 
     glob = _scope(rows, day_list, tz)
 
+    # справочник для админа: кто пользуется сервисом и что с ним происходит (без текстов сообщений)
+    try:
+        acc = {r[0]: r for r in db.execute("SELECT user_id, status, name, username, ts, last_seen FROM access")}
+    except sqlite3.OperationalError:
+        acc = {}
+    directory = []
+    for owner in sorted(set(acc) | owners):
+        pid = pseudo(pseudo_key, owner)
+        a = acc.get(owner)
+        u = users.get(pid)
+        last30 = u["daily"][-30:] if u else []
+        top30 = (u["top"]["30"] if u else {"reasons": [], "domains": [], "signals": {}})
+        owner_rows = by_owner.get(owner, [])
+        last_ev = max((r["ts"] for r in owner_rows), default=None)
+        directory.append({
+            "p": pid, "id": owner, "name": (a[2] if a else "") or "", "username": (a[3] if a else "") or "",
+            "status": (a[1] if a else "env") or "env", "joined": int(a[4]) if a and a[4] else None,
+            "last_seen": int(max(filter(None, [a[5] if a else None, last_ev]), default=0)) or None,
+            "tg": bool(u and u["connected"]["tg"]), "wa": bool(u and u["connected"]["wa"]),
+            "blocking_tg": bool(u and u["modes"]["blocking_tg"]), "autoleave_tg": bool(u and u["modes"]["autoleave_tg"]),
+            "blocking_wa": bool(u and u["modes"]["blocking_wa"]),
+            "checked30": sum(d["checked"] for d in last30), "flagged30": sum(d["flagged"] for d in last30),
+            "blocked30": sum(d["blocked"] for d in last30), "fp30": sum(d["fp"] for d in last30),
+            "gambling30": sum(d["gambling"] for d in last30), "scam30": sum(d["scam"] for d in last30),
+            "spam30": sum(d["spam"] for d in last30), "group_left30": sum(d["group_left"] for d in last30),
+            "senders30": top30.get("unique_senders", 0),
+        })
+    directory.sort(key=lambda x: -(x["last_seen"] or 0))
+
     # «волны»: домены, замеченные у нескольких разных пользователей за 7 дней
     seen: dict[str, set] = defaultdict(set)
     cnt: Counter = Counter()
@@ -232,7 +262,8 @@ def build_snapshot(db: sqlite3.Connection, *, pseudo_key: str, tz_hours: float =
         "table": table,
         "infra": extra or {},
     })
-    return {"v": 1, "generated_at": int(now), "tz": tz_hours, "days": day_list, "global": glob, "users": users}
+    admin = {"directory": directory}
+    return {"v": 1, "generated_at": int(now), "tz": tz_hours, "days": day_list, "global": glob, "users": users, "admin": admin}
 
 
 def prune(db: sqlite3.Connection, keep_days: int = 180) -> dict:

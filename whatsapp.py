@@ -182,8 +182,10 @@ class WhatsAppService:
     def __init__(self, *, bot, db, guard, evo: Evolution, webhook_base: str, secret: str, warn_at=0.5, block_at=0.85,
                  group_warn_at=0.5, group_leave_at=0.85, leave_labels=frozenset({"gambling"}), pair_ttl=300,
                  closed_ttl=3600, max_instances=10, max_blocks_per_hour=5, max_leaves_per_hour=10, recheck_days=7.0,
-                 links=None, link_warn_known=0.8):
+                 links=None, link_warn_known=0.8, learn=None):
         self.bot, self.db, self.guard, self.evo = bot, db, guard, evo
+        self.learn = learn  # learn(owner_id, texts): дообучение по кнопке «Это не спам»
+        self.flagged: dict[tuple, list[str]] = {}  # (владелец, jid) -> тексты, из-за которых тревога (только в памяти)
         self.links, self.link_warn_known, self.known_alert = links, link_warn_known, {}
         self.webhook_url = f"{webhook_base.rstrip('/')}/wa/{secret}"
         self.secret = secret
@@ -546,7 +548,7 @@ class WhatsAppService:
         now = time.time()
         q.append(now)
         burst = sum(1 for t in q if now - t <= 60)
-        res = self.guard.predict(text)
+        res = self.guard.predict(text, owner=owner)
         lk = await self.links.check_text(text) if self.links else None
         doms = [r.host for r in lk.results if r.risk >= 0.3] if lk else []
         if lk and lk.risk > 0:  # ссылки усиливают оценку текста
@@ -560,7 +562,9 @@ class WhatsAppService:
 
         alt = key.get("remoteJidAlt") or jid
         head = defang(f"{m.get('pushName') or '?'} (+{jid_number(alt)})")
-        quote = f"«{defang(text[:200])}»"
+        self.flagged[(owner, jid)] = [text]
+        # цель сервиса: меньше азартной рекламы перед глазами, поэтому её текст в уведомлении скрыт
+        quote = "🙈 Текст азартной рекламы скрыт, чтобы не провоцировать." if label == "gambling" else f"«{defang(text[:200])}»"
         reason = REASONS.get(label, label)
         prof = f"\nПризнаки профиля: {', '.join(p_reasons)}." if p_reasons else ""
         if lk and lk.reasons:
@@ -656,8 +660,9 @@ class WhatsAppService:
             return None
         texts = [extract_text(r.get("message") or {}) for r in recs if not (r.get("key") or {}).get("fromMe")]
         title = info.get("subject") or ""
-        res = score_chat(title, None, info.get("desc") or "", texts, self.guard)
+        res = score_chat(title, None, info.get("desc") or "", texts, self.guard, owner=owner)
         risk, label = res["risk"], res["label"]
+        self.flagged[(owner, gjid)] = res.get("samples", [])
         self._mark_group(owner, gjid, label, risk)
         if risk < self.group_warn_at:
             self.record(owner, gjid, "group", label, risk, 0.0, risk, "group_ok", res["reasons"])
@@ -700,6 +705,9 @@ class WhatsAppService:
         if not jid:
             return False
         self.trust(owner_id, jid)
+        texts = self.flagged.pop((owner_id, jid), [])
+        if texts and self.learn:
+            self.learn(owner_id, texts, "wa_group" if group else "wa_chat")  # дообучаемся на отметке
         if group:
             self._mark_group(owner_id, jid, "trusted", 0.0)
         self.db.execute(

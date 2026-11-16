@@ -67,6 +67,10 @@
   th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; } th:first-child, td:first-child { text-align: left; }
   th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
   tr.me td { background: var(--card2); font-weight: 600; }
+  tr[data-u] { cursor: pointer; } tr[data-u]:hover td { background: var(--card2); }
+  td.l, th.l { text-align: left; } td .sub { display: block; color: var(--muted); font-size: 12px; font-weight: 400; }
+  .back { font: inherit; font-size: 14px; color: var(--accent); background: none; border: 1.5px solid var(--line); border-radius: 999px; padding: 5px 14px; cursor: pointer; margin-bottom: 12px; }
+  input.q { font: inherit; font-size: 14px; color: var(--text); background: var(--card2); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; width: 100%; max-width: 320px; margin-bottom: 10px; }
   .scroll { overflow-x: auto; }
   .empty, .err { text-align: center; padding: 60px 16px; color: var(--muted); }
   .err b, .empty b { color: var(--text); font-size: 18px; display: block; margin-bottom: 6px; }
@@ -82,7 +86,7 @@
   </div>
   <div id="banner"></div>
   <main id="app"><div class="empty">Загружаю…</div></main>
-  <footer>Здесь только цифры. Тексты сообщений, имена, телефоны и ID собеседников на сайт не передаются; пользователи обозначены псевдонимом.</footer>
+  <footer>Тексты сообщений и данные собеседников на сайт не передаются. Обычный пользователь видит только свои цифры; администратор сервиса видит список пользователей и их статистику (о чём пользователей предупреждает бот при подключении).</footer>
 </div>
 
 <script>
@@ -96,7 +100,7 @@ const LABELS = { gambling: ['Казино и ставки', 'red'], scam: ['Мо
 const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 const dlabel = (d) => `${+d.slice(8, 10)} ${MONTHS[+d.slice(5, 7) - 1]}`;
 
-const S = { data: null, tab: 'me', period: 30, demo: false };
+const S = { data: null, tab: 'me', period: 30, demo: false, headers: {}, viewUser: null, filter: '' };
 
 /* ---------------------------------------------------------------- данные */
 const win = (arr, n) => arr.slice(-n);
@@ -209,11 +213,12 @@ function reasonsBlock(scope, n) {
   return { sig: Object.entries(sig).map(([k, v]) => ({ name: { текст: 'Текст сообщения', профиль: 'Профиль отправителя', ссылка: 'Ссылка' }[k] || k, v })), reasons: (t.reasons || []).map((r) => ({ name: r[0], v: r[1] })), domains: (t.domains || []).map((r) => ({ name: r[0], v: r[1], chip: r[2] })) };
 }
 
-function renderMe() {
-  const D = S.data, me = D.me, n = S.period;
+function renderMe(me = S.data.me) {
+  const D = S.data, n = S.period;
   if (!me) return `<div class="empty"><b>Для вас пока нет данных</b>Бот отправит их в течение получаса после первых проверок. Откройте отчёт позже.</div>`;
   const c = C(), d = win(me.daily, n), ch = sum(d, 'checked'), fl = sum(d, 'flagged'), fp = sum(d, 'fp');
   const k = [
+    kpi('Азартной рекламы перехвачено', fmt(sum(d, 'gambling')), 'каждое сообщение — на одно искушение меньше'),
     kpi('Проверено', fmt(ch), delta(me.daily, 'checked', n)),
     kpi('Помечено подозрительным', fmt(fl), `${pct(fl, ch)}% от проверенных · ${delta(me.daily, 'flagged', n) || ''}`),
     kpi('Заблокировано', fmt(sum(d, 'blocked')), `«был бы заблокирован»: ${fmt(sum(d, 'would_block'))}`),
@@ -239,8 +244,8 @@ function renderMe() {
       ${card('Итог периода', `<div class="summary">${summaryText(me, n, false)}</div>`, 'wide')}
     </div>`;
 }
-function fillMe() {
-  const me = S.data.me; if (!me) return; const n = S.period, d = win(me.daily, n), c = C();
+function fillMe(me = S.data.me) {
+  if (!me) return; const n = S.period, d = win(me.daily, n), c = C();
   chart($('#ch1'), d.map((x) => x.date), [{ name: 'Проверено', color: c.accent, data: d.map((x) => x.checked), fill: true }, { name: 'Помечено', color: c.red, data: d.map((x) => x.flagged) }]);
   const tb = threatBlocks(me, 0, n); chart($('#ch2'), tb.labels, tb.series, { stacked: true, h: 190 }); donut($('#dn1'), tb.totals);
   hbars($('#hb0'), [{ name: 'Telegram', v: sum(d, 'tg'), color: c.accent }, { name: 'WhatsApp', v: sum(d, 'wa'), color: c.green }], c.accent);
@@ -248,20 +253,40 @@ function fillMe() {
   hbars($('#hb2'), rb.reasons.map((x) => ({ ...x, color: c.violet })), c.violet, 'Пока нет данных'); hbars($('#hb3'), rb.domains, c.red, 'Опасных ссылок не найдено');
 }
 
+const STATUS = { approved: ['активен', 'on'], env: ['из .env', 'on'], pending: ['ждёт', 'off'], rejected: ['закрыт', 'off'], revoked: ['закрыт', 'off'] };
+const when = (ts) => (ts ? new Date(ts * 1000).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
+const dayOnly = (ts) => (ts ? new Date(ts * 1000).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
+function dirList() { const q = S.filter.trim().toLowerCase(); return ((S.data.admin || {}).directory || []).filter((u) => !q || `${u.name} ${u.username} ${u.id}`.toLowerCase().includes(q)); }
+function usersRows() {
+  const D = S.data;
+  return dirList().map((u) => { const st = STATUS[u.status] || [u.status, 'off'];
+    return `<tr data-u="${esc(u.p)}" class="${u.p === D.myp ? 'me' : ''}"><td class="l">${esc(u.name || 'Без имени')}${u.username ? `<span class="sub">@${esc(u.username)}</span>` : ''}</td><td>${esc(u.id)}</td><td><span class="chip c-${st[1]}">${st[0]}</span></td><td>${u.tg ? '✈️' : ''} ${u.wa ? '💬' : ''}</td><td>${u.blocking_tg || u.blocking_wa ? 'блокировка' : 'уведомления'}${u.autoleave_tg ? ' · автовыход' : ''}</td><td>${when(u.last_seen)}</td><td>${fmt(u.checked30)}</td><td>${fmt(u.flagged30)}</td><td>${fmt(u.gambling30)}</td><td>${fmt(u.blocked30)}</td><td>${fmt(u.fp30)}</td></tr>`; }).join('') || '<tr><td class="l" colspan="11">Никого не найдено</td></tr>';
+}
+function usersTable() {
+  return `<input class="q" id="uq" placeholder="Поиск: имя, @username или id" value="${esc(S.filter)}" aria-label="Поиск пользователей"><div class="scroll"><table><thead><tr><th class="l">Пользователь</th><th>id</th><th>Статус</th><th>Каналы</th><th>Режим</th><th>Последняя активность</th><th>Проверено</th><th>Помечено</th><th>Казино</th><th>Блок.</th><th>Ложных</th></tr></thead><tbody id="utb">${usersRows()}</tbody></table></div><div class="muted" style="margin-top:8px;font-size:12.5px">Цифры за 30 дней. Тексты сообщений не хранятся и здесь не показываются.</div>`;
+}
+function renderUserView() {
+  const D = S.data, u = ((D.admin || {}).directory || []).find((x) => x.p === S.viewUser) || {}, st = STATUS[u.status] || [u.status || '—', 'off'];
+  const row = (k, v) => `<div class="row" style="grid-template-columns:1fr auto"><span>${k}</span><span class="num" style="text-align:right">${v}</span></div>`;
+  const info = `<div class="rows">${row('Имя', esc(u.name || '—'))}${row('Username', u.username ? '@' + esc(u.username) : '—')}${row('Telegram id', esc(u.id || '—'))}${row('Статус доступа', st[0])}${row('Первый вход', dayOnly(u.joined))}${row('Последняя активность', when(u.last_seen))}${row('Telegram', u.tg ? 'подключён' : 'нет')}${row('WhatsApp', u.wa ? 'подключён' : 'нет')}${row('Блокировка Telegram', u.blocking_tg ? 'включена' : 'только уведомления')}${row('Автовыход из групп', u.autoleave_tg ? 'включён' : 'выключен')}${row('Блокировка WhatsApp', u.blocking_wa ? 'включена' : 'только уведомления')}${row('Уникальных отправителей за 30 дн.', fmt(u.senders30 || 0))}${row('Покинуто групп за 30 дн.', fmt(u.group_left30 || 0))}</div>`;
+  return `<button class="back" data-back="1">← Все пользователи</button><div class="grid2">${card(esc(u.name || 'Пользователь') + (u.username ? ' @' + esc(u.username) : ''), info, 'wide', 'профиль')}</div>` + (D.user ? renderMe(D.user) : '<div class="empty"><b>Подробных данных нет</b>У пользователя пока нет проверок или он ещё не подключён.</div>');
+}
+
 function renderAdmin() {
+  if (S.viewUser) return renderUserView();
   const D = S.data, g = D.global, n = S.period;
   if (!g) return '<div class="empty"><b>Нет доступа</b>Общая статистика только для администратора.</div>';
   const d = win(g.daily, n), ch = sum(d, 'checked'), fl = sum(d, 'flagged'), fp = sum(d, 'fp'), t = (g.top[String(n)] || {});
   const k = [
     kpi('Пользователей', fmt(g.accounts.users), `Telegram ${g.accounts.tg} · WhatsApp ${g.accounts.wa}${g.accounts.wa_pending ? ` (+${g.accounts.wa_pending} ждут QR)` : ''}`),
-    kpi('Заявки на доступ', `${g.access.pending}`, `ждут · одобрено ${g.access.approved} · отклонено ${g.access.rejected}`),
+    kpi('Азартной рекламы перехвачено', fmt(sum(d, 'gambling')), 'у всех пользователей за период'),
+    kpi('Доступ открыт всем', `${g.access.approved}`, `активных · закрыт доступ: ${g.access.rejected}${g.access.pending ? ` · ждут: ${g.access.pending}` : ''}`),
     kpi('Проверено', fmt(ch), delta(g.daily, 'checked', n)),
     kpi('Помечено', fmt(fl), `${pct(fl, ch)}% · ${delta(g.daily, 'flagged', n) || ''}`),
     kpi('Уникальных отправителей', fmt(t.unique_senders || 0), 'помечено ботом (только те, кто писал нашим пользователям)'),
     kpi('Ложные срабатывания', `${pct(fp, fl)}%`, `${fmt(fp)} из ${fmt(fl)} помеченных`),
   ].join('');
   const waves = (g.waves || []).map((w) => `<div class="row" style="grid-template-columns:1fr auto auto"><span class="n">${esc(w.domain)}</span><span class="muted">${w.users} польз.</span><span class="num">${w.count}</span></div>`).join('') || '<div class="muted">Пока нет доменов, замеченных у нескольких пользователей за 7 дней</div>';
-  const rows = (g.table || []).map((r, i) => `<tr class="${r.p === D.myp ? 'me' : ''}"><td>${r.p === D.myp ? 'Вы' : 'Пользователь ' + r.n}</td><td>${r.tg ? '✈️' : ''} ${r.wa ? '💬' : ''}</td><td>${fmt(r.checked30)}</td><td>${fmt(r.flagged30)}</td><td>${fmt(r.blocked30)}</td><td>${fmt(r.fp30)}</td></tr>`).join('');
   const infra = g.infra || {}, stale = infra.lists_age_h != null && infra.lists_age_h > 30;
   return `<div class="kpis">${k}</div>
     <div class="grid2">
@@ -272,12 +297,13 @@ function renderAdmin() {
       ${card('Качество: доля ложных срабатываний по неделям', '<div id="a4"></div>')}
       ${card('Опасные домены', '<div id="a5"></div>')}
       ${card('Источники и причины', '<div id="a6"></div>')}
-      ${card('Пользователи', `<div class="scroll"><table><tr><th>Кто</th><th>Каналы</th><th>Проверено</th><th>Помечено</th><th>Блок.</th><th>Ложных</th></tr>${rows}</table></div><div class="muted" style="margin-top:8px;font-size:12.5px">За 30 дней, под псевдонимами: имена и контакты на сайт не передаются.</div>`, 'wide')}
+      ${card('Пользователи', usersTable(), 'wide', 'нажмите на строку, чтобы открыть подробности')}
       ${card('Служебное', `<div class="rows"><div class="row" style="grid-template-columns:1fr auto"><span>Возраст списков ссылок</span><span class="num ${stale ? 'up' : ''}">${infra.lists_age_h != null ? infra.lists_age_h + ' ч' : '—'}</span></div><div class="row" style="grid-template-columns:1fr auto"><span>Домены казино в списках</span><span class="num">${fmt(infra.lists_gambling || 0)}</span></div><div class="row" style="grid-template-columns:1fr auto"><span>Домены фишинга и мошенничества</span><span class="num">${fmt(infra.lists_scam || 0)}</span></div><div class="row" style="grid-template-columns:1fr auto"><span>WhatsApp (Evolution) включён</span><span class="num">${infra.whatsapp ? 'да' : 'нет'}</span></div></div>`)}
       ${card('Итоги периода', `<div class="summary">${summaryText(g, n, true, g)}</div>`, 'wide')}
     </div>`;
 }
 function fillAdmin() {
+  if (S.viewUser) return fillMe(S.data.user);
   const g = S.data.global; if (!g) return; const n = S.period, d = win(g.daily, n), c = C();
   chart($('#a1'), d.map((x) => x.date), [{ name: 'Проверено', color: c.accent, data: d.map((x) => x.checked), fill: true }, { name: 'Помечено', color: c.red, data: d.map((x) => x.flagged) }]);
   const tb = threatBlocks(g, 0, n); chart($('#a2'), tb.labels, tb.series, { stacked: true, h: 190 }); donut($('#a3'), tb.totals);
@@ -300,9 +326,20 @@ function render() {
   (S.tab === 'admin' && D.role === 'admin' ? fillAdmin : fillMe)();
 }
 document.addEventListener('click', (e) => {
-  const t = e.target.closest('button'); if (!t || !S.data) return;
-  if (t.dataset.k) { S.tab = t.dataset.k; render(); } else if (t.dataset.p) { S.period = +t.dataset.p; render(); }
+  if (!S.data) return;
+  const tr = e.target.closest('tr[data-u]');
+  if (tr) { openUser(tr.dataset.u); return; }
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.back) { S.viewUser = null; S.data.user = null; render(); }
+  else if (t.dataset.k) { S.tab = t.dataset.k; S.viewUser = null; render(); } else if (t.dataset.p) { S.period = +t.dataset.p; render(); }
 });
+document.addEventListener('input', (e) => { if (e.target.id === 'uq') { S.filter = e.target.value; $('#utb').innerHTML = usersRows(); } });
+async function openUser(p) {
+  S.viewUser = p; S.data.user = null;
+  if (S.demo) { S.data.user = S.data.me; return render(); }
+  try { const r = await fetch('/api/data?u=' + encodeURIComponent(p), { headers: S.headers, cache: 'no-store' }); if (r.ok) S.data.user = (await r.json()).user || null; } catch (_) {}
+  render();
+}
 let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => S.data && !S.data.error && !S.data.empty && render(), 150); });
 
 /* ---------------------------------------------------------------- демо-данные (для предпросмотра: ?demo=1) */
@@ -319,7 +356,7 @@ function makeDemo() {
   const u1 = mkUser(5, 0.3, true), u2 = mkUser(3, 0.2, false), u3 = mkUser(2, 0.25, true);
   const fields = ['checked', 'flagged', 'blocked', 'would_block', 'warned', 'fp', 'known_link', 'gambling', 'scam', 'spam', 'tg', 'wa', 'group_left'];
   const all = days.map((date, i) => Object.fromEntries([['date', date]].concat(fields.map((f) => [f, u1[i][f] + u2[i][f] + u3[i][f]]))));
-  const p1 = 'demo-me', tb = (u) => ({ p: u.p, n: u.n, tg: true, wa: u.wa, checked30: u.c, flagged30: u.f, blocked30: u.b, fp30: u.fp });
+  const now = Math.floor(Date.now() / 1000), p1 = 'demo-me', tb = (u) => ({ p: u.p, n: u.n, tg: true, wa: u.wa, checked30: u.c, flagged30: u.f, blocked30: u.b, fp30: u.fp });
   return {
     role: 'admin', demo: true, generated_at: Math.floor(Date.now() / 1000), tz: 5, days, myp: p1,
     me: mk(u1, { tg: true, wa: true }, { blocking_tg: true, autoleave_tg: false, blocking_wa: false }),
@@ -328,6 +365,11 @@ function makeDemo() {
       quality: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ week: days[Math.max(0, 89 - (7 - i) * 7)], flagged: 40 + i * 6, fp: [4, 3, 3, 2, 3, 2, 1, 2][i] })),
       table: [{ p: p1, n: 1, tg: true, wa: true, c: 150, f: 45, b: 22, fp: 3 }, { p: 'u2', n: 2, tg: true, wa: false, c: 90, f: 18, b: 0, fp: 1 }, { p: 'u3', n: 3, tg: true, wa: false, c: 60, f: 15, b: 7, fp: 0 }].map((u) => ({ ...tb(u) })),
       infra: { lists_age_h: 6.2, lists_gambling: 342623, lists_scam: 483670, whatsapp: true } },
+    admin: { directory: [
+      { p: p1, id: 111000111, name: 'Айдана К.', username: 'aidana_k', status: 'approved', joined: now - 40 * 86400, last_seen: now - 600, tg: true, wa: true, blocking_tg: true, autoleave_tg: true, blocking_wa: false, checked30: 150, flagged30: 45, blocked30: 22, fp30: 3, gambling30: 24, scam30: 13, spam30: 8, group_left30: 2, senders30: 31 },
+      { p: 'u2', id: 222000222, name: 'Марат', username: '', status: 'approved', joined: now - 12 * 86400, last_seen: now - 5 * 3600, tg: true, wa: false, blocking_tg: false, autoleave_tg: false, blocking_wa: false, checked30: 90, flagged30: 18, blocked30: 0, fp30: 1, gambling30: 9, scam30: 5, spam30: 4, group_left30: 0, senders30: 14 },
+      { p: 'u3', id: 333000333, name: 'Dana', username: 'dana_dev', status: 'approved', joined: now - 3 * 86400, last_seen: now - 86400, tg: true, wa: false, blocking_tg: true, autoleave_tg: false, blocking_wa: false, checked30: 60, flagged30: 15, blocked30: 7, fp30: 0, gambling30: 11, scam30: 3, spam30: 1, group_left30: 1, senders30: 9 },
+    ] },
   };
 }
 
@@ -339,6 +381,7 @@ async function load() {
   if (qs.get('t')) { try { sessionStorage.setItem('sg_t', qs.get('t')); } catch (_) {} history.replaceState(null, '', location.pathname); }
   const headers = {};
   if (token) headers['x-token'] = token; else if (tg && tg.initData) headers['x-tg-init-data'] = tg.initData;
+  S.headers = headers;
   if (tg) { try { tg.ready(); tg.expand(); } catch (_) {} }
   if (!headers['x-token'] && !headers['x-tg-init-data']) { S.data = { error: 'Нужна ссылка из бота', hint: 'Отправьте боту команду /report, он пришлёт личную ссылку на ваш отчёт.' }; return render(); }
   try {
