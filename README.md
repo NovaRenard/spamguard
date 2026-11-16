@@ -76,7 +76,7 @@ python service.py
 Сайт `web/` (Vercel, позже Telegram Mini App): «Мой обзор» и «Админ». Обычный пользователь видит только свои цифры.
 Админ видит всех пользователей: имя, @username, id, статус, подключённые каналы, режимы, активность и цифры, и может открыть
 подробные графики любого (о чём пользователей предупреждает бот при подключении). Тексты сообщений и данные собеседников на сайт не передаются.
-Доступ по подписанной ссылке из `/report`. Подробное техническое задание: [docs/TZ.pdf](docs/TZ.pdf). Тесты: `python tests_analytics.py`, `node web/tests/test_api.js`.
+Доступ по подписанной ссылке из `/report`. Подробное техническое задание: [docs/SpamGuard_opisanie_produkta.pdf](docs/SpamGuard_opisanie_produkta.pdf). Тесты: `python tests_analytics.py`, `node web/tests/test_api.js`.
 
 ## Проверка ссылок
 
