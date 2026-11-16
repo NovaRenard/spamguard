@@ -1,4 +1,6 @@
-# SpamGuard
+# AntiLudo Guard
+
+**Автор: Мұстафин Жәнібек Алтынбекұлы**
 
 Telegram-бот, который защищает ваш аккаунт от спама, мошенников и азартных игр (казино, ставки).
 Бот входит в ваш аккаунт по QR (Telethon), проверяет сообщения **новых** собеседников и группы/каналы,
@@ -76,7 +78,7 @@ python service.py
 Сайт `web/` (Vercel, позже Telegram Mini App): «Мой обзор» и «Админ». Обычный пользователь видит только свои цифры.
 Админ видит всех пользователей: имя, @username, id, статус, подключённые каналы, режимы, активность и цифры, и может открыть
 подробные графики любого (о чём пользователей предупреждает бот при подключении). Тексты сообщений и данные собеседников на сайт не передаются.
-Доступ по подписанной ссылке из `/report`. Подробное техническое задание: [docs/SpamGuard_opisanie_produkta.pdf](docs/SpamGuard_opisanie_produkta.pdf). Тесты: `python tests_analytics.py`, `node web/tests/test_api.js`.
+Доступ по подписанной ссылке из `/report`. Подробное техническое задание: [docs/AntiLudo Guard_opisanie_produkta.pdf](docs/AntiLudo Guard_opisanie_produkta.pdf). Тесты: `python tests_analytics.py`, `node web/tests/test_api.js`.
 
 ## Проверка ссылок
 
@@ -109,3 +111,6 @@ WhatsApp строго относится к автоматизации: блок
 `classifier.py` модель и правила · `senderprofile.py` признаки профиля · `groupcheck.py` группы/каналы ·
 `service.py` бот и мониторинг · `make_dataset.py`, `train.py`, `data/` · `video/` видео-объяснение на Remotion ·
 `bot.py`, `userbot.py` — ранние упрощённые варианты (Business-бот; один аккаунт без QR).
+
+---
+Автор проекта AntiLudo Guard: **Мұстафин Жәнібек Алтынбекұлы**

@@ -2,7 +2,7 @@
   "name": "spamguard-web",
   "version": "1.0.0",
   "private": true,
-  "description": "Аналитика SpamGuard: сайт на Vercel, он же Telegram Mini App",
+  "description": "Аналитика AntiLudo Guard: сайт на Vercel, он же Telegram Mini App",
   "engines": {
     "node": ">=18"
   },
